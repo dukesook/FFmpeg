@@ -91,18 +91,18 @@ static void frac_add(FFFrac *f, int64_t incr)
 int avformat_alloc_output_context2(AVFormatContext **avctx, const AVOutputFormat *oformat,
                                    const char *format, const char *filename)
 {
-    AVFormatContext *s = avformat_alloc_context();
+    AVFormatContext *fmt_ctx = avformat_alloc_context();
     int ret = 0;
 
     *avctx = NULL;
-    if (!s)
+    if (!fmt_ctx)
         goto nomem;
 
     if (!oformat) {
         if (format) {
             oformat = av_guess_format(format, NULL, NULL);
             if (!oformat) {
-                av_log(s, AV_LOG_ERROR, "Requested output format '%s' is not a suitable output format\n", format);
+                av_log(fmt_ctx, AV_LOG_ERROR, "Requested output format '%s' is not a suitable output format\n", format);
                 ret = AVERROR(EINVAL);
                 goto error;
             }
@@ -110,37 +110,37 @@ int avformat_alloc_output_context2(AVFormatContext **avctx, const AVOutputFormat
             oformat = av_guess_format(NULL, filename, NULL);
             if (!oformat) {
                 ret = AVERROR(EINVAL);
-                av_log(s, AV_LOG_ERROR, "Unable to find a suitable output format for '%s'\n",
+                av_log(fmt_ctx, AV_LOG_ERROR, "Unable to find a suitable output format for '%s'\n",
                        filename);
                 goto error;
             }
         }
     }
 
-    s->oformat = oformat;
-    if (s->oformat->priv_data_size > 0) {
-        s->priv_data = av_mallocz(s->oformat->priv_data_size);
-        if (!s->priv_data)
+    fmt_ctx->oformat = oformat;
+    if (fmt_ctx->oformat->priv_data_size > 0) {
+        fmt_ctx->priv_data = av_mallocz(fmt_ctx->oformat->priv_data_size);
+        if (!fmt_ctx->priv_data)
             goto nomem;
-        if (s->oformat->priv_class) {
-            *(const AVClass**)s->priv_data= s->oformat->priv_class;
-            av_opt_set_defaults(s->priv_data);
+        if (fmt_ctx->oformat->priv_class) {
+            *(const AVClass**)fmt_ctx->priv_data= fmt_ctx->oformat->priv_class;
+            av_opt_set_defaults(fmt_ctx->priv_data);
         }
     } else
-        s->priv_data = NULL;
+        fmt_ctx->priv_data = NULL;
 
     if (filename) {
-        if (!(s->url = av_strdup(filename)))
+        if (!(fmt_ctx->url = av_strdup(filename)))
             goto nomem;
 
     }
-    *avctx = s;
+    *avctx = fmt_ctx;
     return 0;
 nomem:
-    av_log(s, AV_LOG_ERROR, "Out of memory\n");
+    av_log(fmt_ctx, AV_LOG_ERROR, "Out of memory\n");
     ret = AVERROR(ENOMEM);
 error:
-    avformat_free_context(s);
+    avformat_free_context(fmt_ctx);
     return ret;
 }
 

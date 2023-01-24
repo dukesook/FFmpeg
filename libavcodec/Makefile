@@ -536,6 +536,7 @@ OBJS-$(CONFIG_MPEG2_VAAPI_ENCODER)     += vaapi_encode_mpeg2.o
 OBJS-$(CONFIG_MPEG2_V4L2M2M_DECODER)   += v4l2_m2m_dec.o
 OBJS-$(CONFIG_MPEG4_DECODER)           += mpeg4videodsp.o xvididct.o
 OBJS-$(CONFIG_MPEG4_ENCODER)           += mpeg4videoenc.o
+OBJS-$(CONFIG_MPEG4_ENCODER)           += mpeg4rawenc.o #NGIIS
 OBJS-$(CONFIG_MPEG4_CUVID_DECODER)     += cuviddec.o
 OBJS-$(CONFIG_MPEG4_MEDIACODEC_DECODER) += mediacodecdec.o
 OBJS-$(CONFIG_MPEG4_OMX_ENCODER)       += omx.o

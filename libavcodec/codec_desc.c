@@ -3604,6 +3604,17 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("AVFrame to AVPacket passthrough"),
         .props     = AV_CODEC_PROP_LOSSLESS,
     },
+    //******************************NGIIS******************************//
+    {
+        // .id        = AV_CODEC_ID_MPEG4,
+        .id        = AV_CODEC_ID_RAW_MP4,
+        .type      = AVMEDIA_TYPE_VIDEO,
+        .name      = "mpeg4_descriptor",
+        .long_name = NULL_IF_CONFIG_SMALL("MPEG-t part 2 descriptors"),
+        .props     = AV_CODEC_PROP_LOSSY | AV_CODEC_PROP_REORDER,
+        .profiles  = NULL_IF_CONFIG_SMALL(ff_mpeg4_video_profiles),
+    },
+    //******************************NGIIS******************************//
 };
 
 static int descriptor_compare(const void *key, const void *member)

@@ -750,6 +750,15 @@ av_cold int ff_mpv_encode_init(AVCodecContext *avctx)
         s->low_delay       = s->max_b_frames ? 0 : 1;
         avctx->delay       = s->low_delay ? 0 : (s->max_b_frames + 1);
         break;
+    //******************NGIIS**********************//
+    case AV_CODEC_ID_RAW_MP4:
+        s->out_format      = FMT_H263;
+        s->h263_pred       = 1;
+        s->unrestricted_mv = 1;
+        s->low_delay       = s->max_b_frames ? 0 : 1;
+        avctx->delay       = s->low_delay ? 0 : (s->max_b_frames + 1);
+        break;
+    //******************NGIIS**********************//
     case AV_CODEC_ID_MSMPEG4V2:
         s->out_format      = FMT_H263;
         s->h263_pred       = 1;
@@ -1980,6 +1989,74 @@ vbv_retry:
     *got_packet = !!pkt->size;
     return 0;
 }
+//**********************************NGIIS***************************************//
+int ff_ngiis_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
+                          const AVFrame *pic_arg, int *got_packet)
+{
+    MpegEncContext *s = avctx->priv_data;
+    int i, stuffing_count, ret;
+    int context_count = s->slice_context_count;
+
+    s->vbv_ignore_qmax = 0;
+
+    s->picture_in_gop_number++;
+
+    if (load_input_picture(s, pic_arg) < 0)
+        return -1;
+
+    if (select_input_picture(s) < 0) {
+        return -1;
+    }
+
+    /* output? */
+    if (s->new_picture->data[0]) {
+        size_t pkt_size = pic_arg->width * pic_arg->height * 3; //NGIIS
+
+        if ((ret = ff_alloc_packet(avctx, pkt, pkt_size)) < 0)
+            return ret;
+        // WARNING - 3/27/2023 - The following line made pkt->size too large 
+        //  resulted in extra 0's being added to the end of each frame
+        // pkt->size = avctx->internal->byte_buffer_size - AV_INPUT_BUFFER_PADDING_SIZE;
+        if (s->mb_info) {
+            s->mb_info_ptr = av_packet_new_side_data(pkt,
+                                 AV_PKT_DATA_H263_MB_INFO,
+                                 s->mb_width*s->mb_height*12);
+            s->prev_mb_info = s->last_mb_info = s->mb_info_size = 0;
+        }
+
+        for (i = 0; i < context_count; i++) {
+            int start_y = s->thread_context[i]->start_mb_y;
+            int   end_y = s->thread_context[i]->  end_mb_y;
+            int h       = s->mb_height;
+            uint8_t *start = pkt->data + (size_t)(((int64_t) pkt->size) * start_y / h);
+            uint8_t *end   = pkt->data + (size_t)(((int64_t) pkt->size) *   end_y / h);
+
+            init_put_bits(&s->thread_context[i]->pb, start, end - start);
+        }
+
+        s->pict_type = s->new_picture->pict_type;
+        //emms_c();
+        ret = frame_start(s);
+        if (ret < 0)
+            return ret;
+
+
+        //WRITE DATA
+        for (i = 0; i < pkt->size; i++) {
+            pkt->data[i] = pic_arg->data[0][i];
+        }
+        *got_packet = !!pkt->size;
+    }
+
+
+    pkt->pts = s->current_picture.f->pts;   //Set the presentation timestamp
+    pkt->dts = pkt->pts;    //Set the Decopmression Timestamp
+
+    // put_bits(s, 8, 0xA);
+    return 0;
+}
+//**********************************NGIIS***************************************//
+
 
 static inline void dct_single_coeff_elimination(MpegEncContext *s,
                                                 int n, int threshold)
@@ -3572,7 +3649,7 @@ static int encode_picture(MpegEncContext *s, int picture_number)
     // RAL: Condition added for MPEG1VIDEO
     if (s->out_format == FMT_MPEG1 || (s->h263_pred && !s->msmpeg4_version))
         set_frame_distances(s);
-    if(CONFIG_MPEG4_ENCODER && s->codec_id == AV_CODEC_ID_MPEG4)
+    if(CONFIG_MPEG4_ENCODER && (s->codec_id == AV_CODEC_ID_MPEG4 || s->codec_id == AV_CODEC_ID_RAW_MP4))
         ff_set_mpeg4_time(s);
 
     s->me.scene_change_score=0;

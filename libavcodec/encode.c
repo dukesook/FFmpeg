@@ -202,6 +202,11 @@ int ff_encode_encode_cb(AVCodecContext *avctx, AVPacket *avpkt,
 
     if (!ret && *got_packet) {
         if (avpkt->data) {
+            //NGIIS**************************************************
+            // for (int i = 0; i < avpkt->size; i++) {
+            //     printf("%x ", avpkt->data[i]);
+            // } printf("\n");
+            //NGIIS**************************************************
             ret = encode_make_refcounted(avctx, avpkt);
             if (ret < 0)
                 goto unref;

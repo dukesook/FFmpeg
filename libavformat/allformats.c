@@ -277,6 +277,7 @@ extern const AVOutputFormat ff_mp2_muxer;
 extern const AVInputFormat  ff_mp3_demuxer;
 extern const AVOutputFormat ff_mp3_muxer;
 extern const AVOutputFormat ff_mp4_muxer;
+extern const AVOutputFormat ff_mp4_raw_muxer; //NGIIS
 extern const AVInputFormat  ff_mpc_demuxer;
 extern const AVInputFormat  ff_mpc8_demuxer;
 extern const AVOutputFormat ff_mpeg1system_muxer;

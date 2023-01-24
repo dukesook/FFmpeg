@@ -2190,6 +2190,103 @@ static int mov_write_aux_tag(AVIOContext *pb, const char *aux_type)
     return update_size(pb, pos);
 }
 
+static void write_cmpd(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track) {
+
+
+    int64_t start_position = avio_tell(pb); //Store the location of the first byte
+    
+    //SIZE
+    avio_wb32(pb, 0); //0 for now, update later
+
+    //4 CC  
+    avio_wl32(pb, MKTAG('c', 'm', 'p', 'd') ); // store it byteswapped
+
+    //DATA
+    avio_wb16(pb, 0x03); //unsigned int(16) component_count;
+    {
+        avio_wb16(pb, 0x4); //unsigned int(16) component_type;
+        avio_wb16(pb, 0x5); //unsigned int(16) component_type;
+        avio_wb16(pb, 0x6); //unsigned int(16) component_type;
+
+        // void avio_write(AVIOContext *s, const unsigned char *buf, int size)
+        // avio_wb16(pb, 0x8000); //unsigned int(16) component_type;
+        // avio_write(pb, "foo you too\0", 12);
+        // avio_wb16(pb, 0x8888); //unsigned int(16) component_type;
+        // avio_write(pb, "A\0", 2);
+        // avio_wb16(pb, 0xFFFF); //unsigned int(16) component_type;
+        // avio_write(pb, "abcd\0", 5);
+    }
+
+
+    //UPDATE SIZE
+    update_size(pb, start_position);
+
+}
+
+
+static void write_uncC(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track) {
+
+
+    int64_t pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size */
+
+    //4 CC  
+    avio_wl32(pb, MKTAG('u', 'n', 'c', 'C') ); // store it byteswapped
+
+    //FULL BOX
+    avio_w8(pb, 0x00);       // Flags
+    avio_wb24(pb, 0x000000); // Version
+
+    //unsigned int(32) profile
+    avio_wb32(pb, 0x00000000);
+
+    //unisnged int(16) component_count
+    avio_wb16(pb, 0x03);
+
+    {
+        //RED
+        avio_wb16(pb, 0x0000); // unsigned int(16) component_index;
+        avio_w8(pb, 0x07); // unsigned int(8) component_bit_depth_minus_one;
+		avio_w8(pb, 0x00); // unsigned int(8) component_format;
+		avio_w8(pb, 0x00); // unsigned int(8) component_align_size;
+
+        //GREEN
+        avio_wb16(pb, 0x0001); // unsigned int(16) component_index;
+        avio_w8(pb, 0x07); // unsigned int(8) component_bit_depth_minus_one;
+		avio_w8(pb, 0x00); // unsigned int(8) component_format;
+		avio_w8(pb, 0x00); // unsigned int(8) component_align_size;
+
+        //BLUE
+        avio_wb16(pb, 0x0002); // unsigned int(16) component_index;
+        avio_w8(pb, 0x07); // unsigned int(8) component_bit_depth_minus_one;
+		avio_w8(pb, 0x00); // unsigned int(8) component_format;
+		avio_w8(pb, 0x00); // unsigned int(8) component_align_size;
+    }
+
+	avio_w8(pb, 0x00); // unsigned int(8) sampling_type;     //0 = No subsampling
+	avio_w8(pb, 0x00); // unsigned int(8) interleave_type;  //0 = Planar, 1 = interleaved
+	avio_w8(pb, 0x00); // unsigned int(8) block_size;
+
+    //FLAGS
+	// bit(1) components_little_endian;
+	// bit(1) block_pad_last;
+	// bit(1) block_little_endian;
+	// bit(1) block_reversed;
+    // bit(1) pad_unknown;
+	// bit(3) reserved = 0;
+    avio_w8(pb, 0X00);
+
+    avio_w8(pb, 0X00);         // unsigned int(8) pixel_size;
+	avio_wb32(pb, 0x00000000); // unsigned int(32) row_align_size;
+	avio_wb32(pb, 0x00000000); // unsigned int(32) tile_align_size;
+	avio_wb32(pb, 0x00000000); // unsigned int(32) num_tile_cols_minus_one;
+	avio_wb32(pb, 0x00000000); // unsigned int(32) num_tile_rows_minus_one;
+
+
+    update_size(pb, pos);
+
+}
+
 static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track)
 {
     int ret = AVERROR_BUG;
@@ -2274,6 +2371,19 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
     } else
         avio_wb16(pb, 0xffff); /* Reserved */
 
+//********NGIIS*******// 
+//stbl
+//  stsd
+//      uncv - video tag
+//          uncC
+    if( s->oformat->video_codec == AV_CODEC_ID_RAW_MP4) {
+        write_uncC(s, pb, mov, track);
+        write_cmpd(s, pb, mov, track);
+        
+        return update_size(pb, pos);
+        return 0;
+    }
+//********NGIIS*******//
     if (track->tag == MKTAG('m','p','4','v'))
         mov_write_esds_tag(pb, track);
     else if (track->par->codec_id == AV_CODEC_ID_H263)
@@ -4552,7 +4662,7 @@ static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
 
     if (mov->mode == MODE_PSP)
         mov_write_uuidusmt_tag(pb, s);
-    else if (mov->mode != MODE_AVIF)
+    else if (mov->mode != MODE_AVIF & 0)
         mov_write_udta_tag(pb, mov, s);
 
     return update_size(pb, pos);
@@ -5287,7 +5397,6 @@ static int mov_write_mdat_tag(AVIOContext *pb, MOVMuxContext *mov)
     ffio_wfourcc(pb, "mdat");
     return 0;
 }
-
 static void mov_write_ftyp_tag_internal(AVIOContext *pb, AVFormatContext *s,
                                         int has_h264, int has_video, int write_minor)
 {
@@ -7717,6 +7826,7 @@ static const AVCodecTag *const codec_3gp_tags_list[] = { codec_3gp_tags, NULL };
 
 static const AVCodecTag codec_mp4_tags[] = {
     { AV_CODEC_ID_MPEG4,           MKTAG('m', 'p', '4', 'v') },
+    { AV_CODEC_ID_RAW_MP4,         MKTAG('u', 'n', 'c', 'v') }, //NGIIS
     { AV_CODEC_ID_H264,            MKTAG('a', 'v', 'c', '1') },
     { AV_CODEC_ID_H264,            MKTAG('a', 'v', 'c', '3') },
     { AV_CODEC_ID_HEVC,            MKTAG('h', 'e', 'v', '1') },
@@ -7865,6 +7975,28 @@ const AVOutputFormat ff_mp4_muxer = {
     .check_bitstream   = mov_check_bitstream,
     .priv_class        = &mov_isobmff_muxer_class,
 };
+//*****************************NGIIS**********************************//
+const AVOutputFormat ff_mp4_raw_muxer = {
+    .name              = "mp5",
+    .long_name         = NULL_IF_CONFIG_SMALL("MP4 (MPEG-4 Part 14)"),
+    .mime_type         = "video/mp4",
+    .extensions        = "mp4",
+    .priv_data_size    = sizeof(MOVMuxContext),
+    .audio_codec       = AV_CODEC_ID_AAC,
+    .video_codec       = AV_CODEC_ID_RAW_MP4,
+    // .video_codec       = AV_CODEC_ID_MPEG4,
+    // .video_codec       = AV_CODEC_ID_RAWVIDEO,
+    .init              = mov_init,
+    .write_header      = mov_write_header,
+    .write_packet      = mov_write_packet,
+    .write_trailer     = mov_write_trailer,
+    .deinit            = mov_free,
+    .flags             = AVFMT_GLOBALHEADER | AVFMT_ALLOW_FLUSH | AVFMT_TS_NEGATIVE,
+    .codec_tag         = mp4_codec_tags_list,
+    .check_bitstream   = mov_check_bitstream,
+    .priv_class        = &mov_isobmff_muxer_class,
+};
+//*****************************NGIIS**********************************//
 #endif
 #if CONFIG_PSP_MUXER
 const AVOutputFormat ff_psp_muxer = {

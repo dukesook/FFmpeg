@@ -70,6 +70,12 @@ const AVOutputFormat *av_guess_format(const char *short_name, const char *filena
     score_max = 0;
     while ((fmt = av_muxer_iterate(&i))) {
         score = 0;
+        //****************NGIIS*******************//
+        if (fmt->video_codec == AV_CODEC_ID_RAW_MP4 || fmt->name == "mp5") {    //NGIIS
+            printf("WARNING - format.c - av_guess_format() - returning hard coded muxer\n");
+            return fmt; //NGIIS
+        }
+        //****************NGIIS*******************//
         if (fmt->name && short_name && av_match_name(short_name, fmt->name))
             score += 100;
         if (fmt->mime_type && mime_type && !strcmp(fmt->mime_type, mime_type))
