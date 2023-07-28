@@ -209,6 +209,7 @@ extern const FFCodec ff_mpeg2video_encoder;
 extern const FFCodec ff_mpeg2video_decoder;
 extern const FFCodec ff_mpeg4_encoder;
 extern const FFCodec ff_mpeg4_decoder;
+extern const FFCodec ff_mpeg4_raw_encoder; 
 extern const FFCodec ff_mpeg4_crystalhd_decoder;
 extern const FFCodec ff_mpeg4_v4l2m2m_decoder;
 extern const FFCodec ff_mpeg4_mmal_decoder;

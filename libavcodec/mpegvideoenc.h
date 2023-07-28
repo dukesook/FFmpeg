@@ -122,6 +122,8 @@ void ff_mpv_encode_init_x86(MpegEncContext *s);
 int ff_mpv_encode_end(AVCodecContext *avctx);
 int ff_mpv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
                           const AVFrame *frame, int *got_packet);
+int ff_uncv_encode_picture(AVCodecContext *avctx, AVPacket *pkt, //NGIIS
+                          const AVFrame *frame, int *got_packet);//NGIIS
 int ff_mpv_reallocate_putbitbuffer(MpegEncContext *s, size_t threshold, size_t size_increase);
 
 void ff_write_quant_matrix(PutBitContext *pb, uint16_t *matrix);

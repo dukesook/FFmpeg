@@ -258,7 +258,6 @@ int ff_encode_encode_cb(AVCodecContext *avctx, AVPacket *avpkt,
 {
     const FFCodec *const codec = ffcodec(avctx->codec);
     int ret;
-
     ret = codec->cb.encode(avctx, avpkt, frame, got_packet);
     emms_c();
     av_assert0(ret <= 0);

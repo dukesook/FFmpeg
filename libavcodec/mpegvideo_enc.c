@@ -744,6 +744,7 @@ av_cold int ff_mpv_encode_init(AVCodecContext *avctx)
         s->unrestricted_mv = 0;
         break;
     case AV_CODEC_ID_MPEG4:
+    case AV_CODEC_ID_MPEG4_RAW: //NGIIS2
         s->out_format      = FMT_H263;
         s->h263_pred       = 1;
         s->unrestricted_mv = 1;
@@ -1754,6 +1755,104 @@ static int frame_start(MpegEncContext *s)
     return 0;
 }
 
+static void draw_edges (uint8_t *buf, int wrap, int width, int height, int w, int h, int sides) {
+
+}
+
+int ff_uncv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
+                          const AVFrame *pic_arg, int *got_packet) {
+    MpegEncContext *s = avctx->priv_data;
+    int i, ret;
+    int context_count = s->slice_context_count;
+    uint8_t bpp = 1; //bits per pixel
+
+    s->vbv_ignore_qmax = 0;
+    s->picture_in_gop_number++;
+    s->mpvencdsp.draw_edges = draw_edges; //The default draw_edges was throwing a seg fault
+    if (load_input_picture(s, pic_arg) < 0)
+        return -1;
+
+    if (select_input_picture(s) < 0) {
+        return -1;
+    }
+
+    //SELECT PIXEL FORMAT
+    enum AVPixelFormat input_format = s->avctx->pix_fmt;
+    // printf("input_format: %d\n", input_format);
+    switch(input_format) {
+        case AV_PIX_FMT_YUV420P:
+            printf("yuv 420\n");
+        break;
+        case AV_PIX_FMT_RGB24:
+            // printf("RGB24!\n");
+            bpp = 3; 
+        break;
+        case AV_PIX_FMT_GRAY8:
+            // printf("GRAY8!\n");
+            bpp = 1; 
+            break;
+        case AV_PIX_FMT_GRAY16LE:
+            // printf("AV_PIX_FMT_GRAY16LE\n");
+            bpp = 2; 
+            break;
+        default:
+            printf("WARNING! - unhandled input pixel format: %d\n", input_format);
+        return 0;
+    }
+
+    if (!s->new_picture->data[0]) {
+        printf("No new picture data\n");
+        return 0;
+    }
+
+    size_t pkt_size = pic_arg->width * pic_arg->height * bpp; //NGIIS
+    /* output? */
+    if ((ret = ff_alloc_packet(avctx, pkt, pkt_size)) < 0)
+        return ret;
+    if (s->mb_info) {
+        s->mb_info_ptr = av_packet_new_side_data(pkt,
+                                AV_PKT_DATA_H263_MB_INFO,
+                                s->mb_width*s->mb_height*12);
+        s->prev_mb_info = s->last_mb_info = s->mb_info_size = 0;
+    }
+
+    for (i = 0; i < context_count; i++) {
+        int start_y = s->thread_context[i]->start_mb_y;
+        int   end_y = s->thread_context[i]->  end_mb_y;
+        int h       = s->mb_height;
+        uint8_t *start = pkt->data + (size_t)(((int64_t) pkt->size) * start_y / h);
+        uint8_t *end   = pkt->data + (size_t)(((int64_t) pkt->size) *   end_y / h);
+
+        init_put_bits(&s->thread_context[i]->pb, start, end - start);
+    }
+
+    s->pict_type = s->new_picture->pict_type;
+    //emms_c();
+    ret = frame_start(s);
+    if (ret < 0)
+        return ret;
+
+
+
+        *got_packet = !!pkt->size;
+
+    //WRITE DATA
+    int channels = 1; //MONOCHROME
+    // for (int i = 0; i < pkt_size; i++) {
+    //     pkt->data[i] = pic_arg->data[0][i];
+    // }  
+    //LITTLE ENDIAN WRITE  
+    for (int i = 0; i < pkt_size; i = i + 2) {
+        pkt->data[i] = pic_arg->data[0][i+1];
+        pkt->data[i+1] = pic_arg->data[0][i];
+    }
+
+
+    pkt->pts = s->current_picture.f->pts;   //Set the presentation timestamp
+    pkt->dts = pkt->pts;    //Set the Decopmression Timestamp
+
+    return 0;
+}
 int ff_mpv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
                           const AVFrame *pic_arg, int *got_packet)
 {

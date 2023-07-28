@@ -129,6 +129,14 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .profiles  = NULL_IF_CONFIG_SMALL(ff_mpeg4_video_profiles),
     },
     {
+        .id        = AV_CODEC_ID_MPEG4_RAW,
+        .type      = AVMEDIA_TYPE_VIDEO,
+        .name      = "mpeg4_raw",
+        .long_name = NULL_IF_CONFIG_SMALL("MPEG-4 part 2"),
+        .props     = AV_CODEC_PROP_LOSSY | AV_CODEC_PROP_REORDER,
+        .profiles  = NULL_IF_CONFIG_SMALL(ff_mpeg4_video_profiles),
+    },
+    {
         .id        = AV_CODEC_ID_RAWVIDEO,
         .type      = AVMEDIA_TYPE_VIDEO,
         .name      = "rawvideo",

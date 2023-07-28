@@ -1408,3 +1408,22 @@ const FFCodec ff_mpeg4_encoder = {
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .p.priv_class   = &mpeg4enc_class,
 };
+
+//*********************************NGIIS*********************************//
+const FFCodec ff_mpeg4_raw_encoder = {
+    .p.name         = "mpeg4_raw",
+    CODEC_LONG_NAME("MPEG-4 part 2"),
+    .p.type         = AVMEDIA_TYPE_VIDEO,
+    .p.id           = AV_CODEC_ID_MPEG4_RAW,
+    // .p.id           = AV_CODEC_ID_MPEG4,
+    // .p.id           = AV_CODEC_ID_RAWVIDEO,
+    .priv_data_size = sizeof(MpegEncContext),
+    .init           = encode_init,
+    FF_CODEC_ENCODE_CB(ff_uncv_encode_picture),
+    .close          = ff_mpv_encode_end,
+    .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_GRAY16LE, AV_PIX_FMT_GRAY8, AV_PIX_FMT_RGB24, AV_PIX_FMT_GRAY16BE, AV_PIX_FMT_NONE },
+    .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_SLICE_THREADS,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
+    .p.priv_class   = &mpeg4enc_class,
+};
+//*********************************NGIIS*********************************//
