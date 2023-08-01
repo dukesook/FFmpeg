@@ -2279,40 +2279,45 @@ static int mov_write_aux_tag(AVIOContext *pb, const char *aux_type)
     return update_size(pb, pos);
 }
 
-const int MONOCHROME = 1;
-const int BPP = (16) - 1; //bits per pixel 
+
 
 static void write_cmpd(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track) {
 
-
+    enum AVPixelFormat format;
+    uint16_t component_count = 0;
     int64_t start_position = avio_tell(pb); //Store the location of the first byte
+    uint16_t component_types[255]; 
+    uint16_t component_type; 
+
+    format = track->par->format;
+    if (format == AV_PIX_FMT_GRAY8 || format == AV_PIX_FMT_GRAY16LE) {
+            component_count = 1;
+            component_types[0] = 0x0; //0x = Gray
+    }
+    else if (format == AV_PIX_FMT_RGB24) {
+            component_count = 3;
+            component_types[0] = 0x4; // 0x4 = Red
+            component_types[1] = 0x5; // 0x5 = Green
+            component_types[2] = 0x6; // 0x6 = Blue
+    }
+    else {
+        printf("WARNING - movenc.c - write_uncC() - unhandled pixel format: %d\n", format);
+        return;
+    }
+
 
     //SIZE
     avio_wb32(pb, 0); //0 for now, update later
 
+
     //4 CC  
     avio_wl32(pb, MKTAG('c', 'm', 'p', 'd') ); // store it byteswapped
 
-    //DATA
-    if (MONOCHROME) {
-        avio_wb16(pb, 0x01); //unsigned int(16) component_count;
-        
-        avio_wb16(pb, 0x0); //unsigned int(16) component_type; //0 = monochrome
-    } else {
-        avio_wb16(pb, 0x03); //unsigned int(16) component_count;
 
-        avio_wb16(pb, 0x4); //unsigned int(16) component_type; //4 = red
-        avio_wb16(pb, 0x5); //unsigned int(16) component_type; //5 = green
-        avio_wb16(pb, 0x6); //unsigned int(16) component_type; //6 = blue
-
-        // void avio_write(AVIOContext *s, const unsigned char *buf, int size)
-        // avio_wb16(pb, 0x8000); //unsigned int(16) component_type;
-        // avio_write(pb, "foo you too\0", 12);
-        // avio_wb16(pb, 0x8888); //unsigned int(16) component_type;
-        // avio_write(pb, "A\0", 2);
-        // avio_wb16(pb, 0xFFFF); //unsigned int(16) component_type;
-        // avio_write(pb, "abcd\0", 5);
-
+    avio_wb16(pb, component_count); //unsigned int(16) component_count;
+    for (int i = 0; i < component_count; i++) {
+        component_type = component_types[i];
+        avio_wb16(pb, component_type); //unsigned int(16) component_type;
     }
 
 
@@ -2323,58 +2328,57 @@ static void write_cmpd(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, 
 
 static void write_uncC(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track) {
 
+    uint8_t flags = 0;
+    int64_t pos;
+    int8_t bit_depth = 0;          // Bits per component. Typically between 8 & 16.
+    uint16_t component_count;        // Grayscale = 1, RGB = 3
+    enum AVPixelFormat format;
 
-    int64_t pos = avio_tell(pb);
+    format = track->par->format;
+    if (format == AV_PIX_FMT_GRAY8) {
+            printf("AV_PIX_FMT_GRAY8\n");
+            component_count = 1;
+            bit_depth = 8;
+    }
+    else if (format == AV_PIX_FMT_RGB24) {
+            printf("AV_PIX_FMT_RGB24\n");
+            bit_depth = 8;
+            component_count = 3;
+    }
+    else if (format == AV_PIX_FMT_GRAY16LE) {
+            component_count = 1;
+            bit_depth = 16;
+            printf("AV_PIX_FMT_GRAY16LE\n");
+    }
+    else {
+        printf("WARNING - movenc.c - write_uncC() - unhandled pixel format: %d\n", format);
+        return;
+    }
+
+
+    pos = avio_tell(pb);
     avio_wb32(pb, 0); /* size */
 
     //4 CC  
-    avio_wl32(pb, MKTAG('u', 'n', 'c', 'C') ); // store it byteswapped
+    avio_wl32(pb, MKTAG('u', 'n', 'c', 'C') );
 
     //FULL BOX
     avio_w8(pb, 0x00);       // Flags
     avio_wb24(pb, 0x000000); // Version
 
     //unsigned int(32) profile
-    avio_wb32(pb, 0x00000000);
+    avio_wb32(pb, 0x00000000);  // 0 = ???
 
-    if (MONOCHROME) { //MONOCHROME
-        //unisnged int(16) component_count
-        avio_wb16(pb, 0x01);
-
-        avio_wb16(pb, 0x0000); // unsigned int(16) component_index;
-        avio_w8(pb, BPP); // unsigned int(8) component_bit_depth_minus_one;
-        avio_w8(pb, 0x00); // unsigned int(8) component_format;
+    avio_wb16(pb, component_count); //unsigned int(16) component_count
+    for (uint16_t i = 0; i < component_count; i++) {
+        avio_wb16(pb, i); // unsigned int(16) component_index;
+        avio_w8(pb, bit_depth - 1); // unsigned int(8) component_bit_depth_minus_one;
+        avio_w8(pb, 0x00); // unsigned int(8) component_format; 0=uint32_t, 1=float, 2=complex
         avio_w8(pb, 0x00); // unsigned int(8) component_align_size;
-
-    } else { //RGB
-    //unisnged int(16) component_count
-    avio_wb16(pb, 0x03);
-
-    {
-        //RED
-        avio_wb16(pb, 0x0000); // unsigned int(16) component_index;
-        avio_w8(pb, BPP); // unsigned int(8) component_bit_depth_minus_one;
-		avio_w8(pb, 0x00); // unsigned int(8) component_format;
-		avio_w8(pb, 0x00); // unsigned int(8) component_align_size;
-
-        //GREEN
-        avio_wb16(pb, 0x0001); // unsigned int(16) component_index;
-        avio_w8(pb, BPP); // unsigned int(8) component_bit_depth_minus_one;
-		avio_w8(pb, 0x00); // unsigned int(8) component_format;
-		avio_w8(pb, 0x00); // unsigned int(8) component_align_size;
-
-        //BLUE
-        avio_wb16(pb, 0x0002); // unsigned int(16) component_index;
-        avio_w8(pb, BPP); // unsigned int(8) component_bit_depth_minus_one;
-		avio_w8(pb, 0x00); // unsigned int(8) component_format;
-		avio_w8(pb, 0x00); // unsigned int(8) component_align_size;
-    }
-
-
     }
 
 	avio_w8(pb, 0x00); // unsigned int(8) sampling_type;     //0 = No subsampling, 1 = 4:2:2, 2 = 4:2:0
-	avio_w8(pb, 0x00); // unsigned int(8) interleave_type;  //0 = Planar, 1 = interleaved
+	avio_w8(pb, 0x01); // unsigned int(8) interleave_type;  //0 = Planar, 1 = interleaved
 	avio_w8(pb, 0x00); // unsigned int(8) block_size;
 
     //FLAGS
@@ -2384,8 +2388,7 @@ static void write_uncC(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, 
 	// bit(1) block_reversed;
     // bit(1) pad_unknown;
 	// bit(3) reserved = 0;
-    uint8_t flags = 0;
-    flags |= 0x80; //components_little_endian
+    // flags |= 0x80; //components_little_endian
     avio_w8(pb, flags);
 
     avio_w8(pb, 0X00);         // unsigned int(8) pixel_size;

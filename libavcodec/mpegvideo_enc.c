@@ -1755,8 +1755,24 @@ static int frame_start(MpegEncContext *s)
     return 0;
 }
 
-static void draw_edges (uint8_t *buf, int wrap, int width, int height, int w, int h, int sides) {
+static void draw_edges(uint8_t *buf, int wrap, int width, int height, int w, int h, int sides) {
 
+}
+
+static void simple_write(uint8_t* input, uint8_t* output, size_t pkt_size) {
+    printf("Simple_write()\n");
+    for (int i = 0; i < pkt_size; i++) {
+        output[i] = input[i];
+    }      
+}
+
+static void uncv_write_gray16le(uint8_t* input, uint8_t* output, size_t pkt_size) {
+    printf("uncv_write_gray16le()\n");
+    //LITTLE ENDIAN WRITE  
+    // for (int i = 0; i < pkt_size; i = i + 2) {
+    //     pkt->data[i] = pic_arg->data[0][i+1];
+    //     pkt->data[i+1] = pic_arg->data[0][i];
+    // }
 }
 
 int ff_uncv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
@@ -1765,7 +1781,11 @@ int ff_uncv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
     int i, ret;
     int context_count = s->slice_context_count;
     uint8_t bpp = 1; //bits per pixel
-
+    enum AVPixelFormat input_format;
+    size_t pkt_size;
+    void (*write_function)(uint8_t*, uint8_t*, size_t) = &simple_write;
+    
+    input_format = s->avctx->pix_fmt;
     s->vbv_ignore_qmax = 0;
     s->picture_in_gop_number++;
     s->mpvencdsp.draw_edges = draw_edges; //The default draw_edges was throwing a seg fault
@@ -1777,27 +1797,24 @@ int ff_uncv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
     }
 
     //SELECT PIXEL FORMAT
-    enum AVPixelFormat input_format = s->avctx->pix_fmt;
     // printf("input_format: %d\n", input_format);
     switch(input_format) {
         case AV_PIX_FMT_YUV420P:
-            printf("yuv 420\n");
+            //TODO
         break;
         case AV_PIX_FMT_RGB24:
-            // printf("RGB24!\n");
             bpp = 3; 
         break;
         case AV_PIX_FMT_GRAY8:
-            // printf("GRAY8!\n");
             bpp = 1; 
             break;
         case AV_PIX_FMT_GRAY16LE:
-            // printf("AV_PIX_FMT_GRAY16LE\n");
+            write_function = &uncv_write_gray16le;
             bpp = 2; 
             break;
         default:
             printf("WARNING! - unhandled input pixel format: %d\n", input_format);
-        return 0;
+            return 0;
     }
 
     if (!s->new_picture->data[0]) {
@@ -1805,8 +1822,7 @@ int ff_uncv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
         return 0;
     }
 
-    size_t pkt_size = pic_arg->width * pic_arg->height * bpp; //NGIIS
-    /* output? */
+    pkt_size = pic_arg->width * pic_arg->height * bpp; //NGIIS
     if ((ret = ff_alloc_packet(avctx, pkt, pkt_size)) < 0)
         return ret;
     if (s->mb_info) {
@@ -1832,22 +1848,23 @@ int ff_uncv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
     if (ret < 0)
         return ret;
 
-
-
-        *got_packet = !!pkt->size;
-
     //WRITE DATA
-    int channels = 1; //MONOCHROME
+    // Simple Write
     // for (int i = 0; i < pkt_size; i++) {
     //     pkt->data[i] = pic_arg->data[0][i];
     // }  
-    //LITTLE ENDIAN WRITE  
-    for (int i = 0; i < pkt_size; i = i + 2) {
-        pkt->data[i] = pic_arg->data[0][i+1];
-        pkt->data[i+1] = pic_arg->data[0][i];
-    }
+    // simple_write(pic_arg->data[0], pkt->data, pkt_size);
+    (*write_function)(pic_arg->data[0], pkt->data, pkt_size);
+    //Change Bands
+    // for (int i = 0; i < pkt_size; i = i + 3) {
+    //     pkt->data[i + 0] = pic_arg->data[0][i + 0];
+    //     pkt->data[i + 1] = pic_arg->data[0][i + 1];
+    //     pkt->data[i + 2] = pic_arg->data[0][i + 2];
+    // }
 
 
+
+    *got_packet = !!pkt->size;
     pkt->pts = s->current_picture.f->pts;   //Set the presentation timestamp
     pkt->dts = pkt->pts;    //Set the Decopmression Timestamp
 
