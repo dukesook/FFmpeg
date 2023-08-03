@@ -2330,7 +2330,7 @@ static void write_uncC(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, 
 
     uint8_t flags = 0;
     int64_t pos;
-    int8_t bit_depth = 0;          // Bits per component. Typically between 8 & 16.
+    volatile int8_t bit_depth = 0;          // Bits per component. Typically between 8 & 16.
     uint16_t component_count;        // Grayscale = 1, RGB = 3
     enum AVPixelFormat format;
 
@@ -2348,6 +2348,7 @@ static void write_uncC(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, 
     else if (format == AV_PIX_FMT_GRAY16LE) {
             component_count = 1;
             bit_depth = 16;
+            bit_depth = 8;
             printf("AV_PIX_FMT_GRAY16LE\n");
     }
     else {
@@ -2389,6 +2390,8 @@ static void write_uncC(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, 
     // bit(1) pad_unknown;
 	// bit(3) reserved = 0;
     // flags |= 0x80; //components_little_endian
+    // flags |= 0x40; //block_pad_last
+    // flags |= 0x20; //block_little_endian
     avio_w8(pb, flags);
 
     avio_w8(pb, 0X00);         // unsigned int(8) pixel_size;

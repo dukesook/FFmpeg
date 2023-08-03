@@ -1766,13 +1766,79 @@ static void simple_write(uint8_t* input, uint8_t* output, size_t pkt_size) {
     }      
 }
 
+static void Sample14bitScaling(uint16_t* ImageIn, size_t pkt_size, uint8_t* ImageOut) {
+    // 2^16 = 65536
+    // 2^14 = 16384
+    // 2^12 = 4096
+    #define BIT_RANGE 16384 //2^14
+    int i;
+    double sum = 0.0;
+    int Equalize[BIT_RANGE];
+    double Histo[BIT_RANGE];
+
+    /*< Zero out histogram array */
+    for (i = 0; i < BIT_RANGE; i++) {
+        Equalize[i] = 0;
+        Histo[i] = 0.0;
+    }
+
+    /*< Calculate histogram of image and store result in Equalize array */
+    for (i = 0; i < pkt_size; i++) {    
+        Equalize[16383&ImageIn[i]]++;
+    }
+    
+    /*< Scale equalization terms via square root*/
+    for (i = 0; i < BIT_RANGE; i++) {
+        Histo[i] = sqrt((double)Equalize[i]); 
+        sum += Histo[i];
+    }
+
+    for (i = 1; i < BIT_RANGE; i++) {
+        Histo[i] += Histo[i-1];
+    }
+
+    /*< Normalize summed values to output gray level space */
+    for (i = 0; i < BIT_RANGE; i++) {
+        Equalize[i] = (int)(( 255.0*Histo[i])/(double)sum);
+    }
+
+    /*< Remap the input pixels to create the equalized image */
+    for (i=0; i < pkt_size; i++) {
+        ImageOut[i] = (unsigned char) (Equalize[16383&ImageIn[i]]);
+    }
+}
+
+static void uncv_write_gray16le_scale_to_8_bits(uint8_t* input, uint8_t* output, size_t pkt_size) {
+
+    //Scale 12 bits to 8
+    // size_t pixel_count = pkt_size/2; //There are two bytes per pixel 
+    uint16_t* input_big_endian = (uint16_t*) malloc(pkt_size * sizeof(uint16_t));
+    uint16_t x;
+    size_t j = 0;
+
+    //Convert to Big Endian
+    for (int i = 0; i < pkt_size; i++) {
+        x   = input[j+1];
+        x <<= 8;
+        x |= input[j];
+        j = j + 2;
+        input_big_endian[i] = x;
+    }
+
+    //Scale to 8 bits.
+    Sample14bitScaling(input_big_endian, pkt_size, output);
+
+    free(input_big_endian);
+}
+
 static void uncv_write_gray16le(uint8_t* input, uint8_t* output, size_t pkt_size) {
-    printf("uncv_write_gray16le()\n");
+    // printf("uncv_write_gray16le()\n");
     //LITTLE ENDIAN WRITE  
-    // for (int i = 0; i < pkt_size; i = i + 2) {
-    //     pkt->data[i] = pic_arg->data[0][i+1];
-    //     pkt->data[i+1] = pic_arg->data[0][i];
-    // }
+    for (int i = 0; i < pkt_size; i = i + 2) {
+        output[i]   = input[i+1] << 4;
+        output[i] |= (input[i] >> 4);
+        output[i+1] = input[i]   << 4;
+    }
 }
 
 int ff_uncv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
@@ -1809,6 +1875,11 @@ int ff_uncv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
             bpp = 1; 
             break;
         case AV_PIX_FMT_GRAY16LE:
+            write_function = &uncv_write_gray16le_scale_to_8_bits;
+            // s->avctx->pix_fmt = AV_PIX_FMT_GRAY8;
+            bpp = 1; 
+            break;
+
             write_function = &uncv_write_gray16le;
             bpp = 2; 
             break;
