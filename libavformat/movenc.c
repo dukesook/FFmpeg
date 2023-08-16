@@ -2931,6 +2931,8 @@ static int mov_preroll_write_stbl_atoms(AVIOContext *pb, MOVTrack *track)
     return 0;
 }
 
+static int ngiis_write_saiz_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s);
+static int ngiis_write_saio_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s);
 static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track)
 {
     int64_t pos = avio_tell(pb);
@@ -2966,6 +2968,10 @@ static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
     if (track->par->codec_id == AV_CODEC_ID_OPUS || track->par->codec_id == AV_CODEC_ID_AAC) {
         mov_preroll_write_stbl_atoms(pb, track);
     }
+    //NGIIS
+    ngiis_write_saiz_box(pb, mov, s);
+    ngiis_write_saio_box(pb, mov, s);
+    //NGIIS
     return update_size(pb, pos);
 }
 
@@ -3893,6 +3899,474 @@ static int mov_write_track_udta_tag(AVIOContext *pb, MOVMuxContext *mov,
     return 0;
 }
 
+//**************************************NGIIS**************************************//
+static const char* ism_xml = " \
+<?xml-model href=\"../../Schematron/ISM/ISM_XML.sch\" type=\"application/xml\" schematypens=\"http://purl.oclc.org/dsdl/schematron\"?><!-- Distro Statement: Distribution Notice: \
+ This document is being made available by the Intelligence Community Chief Information Officer \
+ to Federal, State, Local, Tribal, and Foreign Partners and associated contractors. Approval for \
+ any further distribution must be coordinated via the Intelligence Community Chief Information \
+ Officer, at ic-standards-support@odni.gov.--><!-- All classification marks in this example are \
+ for illustrative purposes only, there are no \
+ actual classified data contained in this example --><test:root xmlns:test=\"test:ism\" \
+ xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" \
+ xsi:schemaLocation=\"test:ism test_ism.xsd\"> \
+ <arh:Security xmlns:arh=\"urn:us:gov:ic:arh\" \
+ ism:compliesWith=\"USA-CUI USGov\" \
+ ism:DESVersion=\"202111.202211\" \
+ ism:ISMCATCESVersion=\"202211\" \
+ ism:resourceElement=\"true\" \
+ ism:createDate=\"2006-05-04\" \
+ ism:classification=\"U\" \
+ ism:cuiBasic=\"CMPRS JURY\" \
+ ism:cuiControlledBy=\"Chief of Something\" \
+ ism:cuiDecontrolEvent=\"some event\" \
+ ism:disseminationControls=\"DL_ONLY\" \
+ ism:ownerProducer=\"USA\"> \
+ <ntk:Access xmlns:ntk=\"urn:us:gov:ic:ntk\" \
+ ntk:externalReference=\"true\" \
+ ism:classification=\"U\" \
+ ism:ownerProducer=\"USA\"> \
+ <ntk:RequiresAnyOf> \
+ <ntk:AccessProfileList> \
+ <ntk:AccessProfile ism:classification=\"U\" ism:ownerProducer=\"USA\"> \
+ <ntk:AccessPolicy>urn:us:gov:ic:aces:ntk:permissive</ntk:AccessPolicy> \
+ <ntk:ProfileDes>urn:us:gov:ic:ntk:profile:grp-ind</ntk:ProfileDes> \
+ <ntk:VocabularyType ntk:name=\"individual:unclasssourceforge\" \
+ ntk:source=\"UnclassSourceForge\"/> \
+ <ntk:AccessProfileValue ntk:vocabulary=\"individual:unclasssourceforge\">bobstuart</ntk:AccessProfileValue> \
+ <ntk:AccessProfileValue ntk:vocabulary=\"individual:unclasssourceforge\">ssun</ntk:AccessProfileValue> \
+ <ntk:AccessProfileValue ntk:vocabulary=\"individual:unclasssourceforge\">cjhodges</ntk:AccessProfileValue> \
+ <ntk:AccessProfileValue ntk:vocabulary=\"individual:unclasssourceforge\">cgilsenan</ntk:AccessProfileValue> \
+ </ntk:AccessProfile> \
+ </ntk:AccessProfileList> \
+ </ntk:RequiresAnyOf> \
+ </ntk:Access> \
+ <ism:NoticeList ism:classification=\"U\" ism:ownerProducer=\"USA\"> \
+ <ism:Notice ism:classification=\"U\" \
+ ism:ownerProducer=\"USA\" \
+ ism:unregisteredNoticeType=\"Holiday\" \
+ism:externalNotice=\"true\"> \
+ <ism:NoticeText ism:classification=\"U\" ism:ownerProducer=\"USA\">Memorial day is on May 28th 2012</ism:NoticeText> \
+ </ism:Notice> \
+ <ism:Notice ism:classification=\"U\" \
+ ism:ownerProducer=\"USA\" \
+ism:unregisteredNoticeType=\"Holiday\" \
+ism:externalNotice=\"true\"> \
+ <ism:NoticeText ism:classification=\"U\" \
+ ism:ownerProducer=\"USA\" \
+ism:cuiBasic=\"CMPRS JURY\">The next Holiday will be July 4th 2012</ism:NoticeText> \
+ </ism:Notice> \
+ </ism:NoticeList> \
+ </arh:Security> \
+<test:parentElement ism:classification=\"U\" \
+ ism:ownerProducer=\"USA\" \
+ism:cuiBasic=\"CMPRS JURY\" \
+ism:disseminationControls=\"DL_ONLY\">Executive Summary: From 1754 to 1763 Europe and the Americas were caught up in a \
+ conflict between England, under King George II, and France, under King Louis XV. In Europe this period was known as \
+ the Seven Years' War; in North America it came to be called the French and Indian War. It was a conflict over trade \
+ and land. \
+ <test:childElement ism:classification=\"U\" \
+ ism:ownerProducer=\"USA\" \
+ism:cuiBasic=\"CMPRS\" \
+ ism:disseminationControls=\"DL_ONLY\"> \
+ <test:grandchildElement ism:classification=\"U\" \
+ ism:ownerProducer=\"USA\" \
+ism:disseminationControls=\"DL_ONLY\">Paragraph: The English sent Crown forces from England to fortify the \
+ colonies and fight the French and Indian invaders, but it was also necessary to recruit soldiers from the \
+ colonial population. The English army found that fighting an enemy in the near-wilderness of North America was \
+ too much for their massed regiments. The dense forests and mountainous terrain required fighting men who knew \
+ the habits of the enemy and could serve effectively as scouts and skirmishers.</test:grandchildElement> \
+ <test:grandchildElement ism:classification=\"U\" ism:ownerProducer=\"USA\" ism:cuiBasic=\"CMPRS\">Paragraph: Men from local communities and nearby states were recruited to \
+join ranger \
+ companies in the Hudson Valley campaign. The New Hampshireman Robert Rogers formed the most notable of these \
+ ranger companies.</test:grandchildElement> \
+ </test:childElement> \
+ <test:childElement ism:classification=\"U\" \
+ ism:ownerProducer=\"USA\" \
+ism:cuiBasic=\"JURY\" \
+ ism:disseminationControls=\"DL_ONLY\">Paragraph: Rogers grew up in southern New Hampshire, in an area which had known \
+ years of murderous Indian raids. He had the knowledge and the spirit to make a good ranger commander, and both he and \
+ his brother James joined the war in the King's service as rangers. Soon his own company, Rogers' Rangers, was in \
+ service in the upper Hudson River area where they became known for their successful but unorthodox \
+ tactics.</test:childElement> \
+ </test:parentElement> \
+ <test:parentElement ism:classification=\"U\" \
+ ism:ownerProducer=\"USA\" \
+ism:cuiBasic=\"JURY\" \
+ism:disseminationControls=\"DL_ONLY\"> \
+ <test:childElement ism:classification=\"U\" ism:ownerProducer=\"USA\" ism:cuiBasic=\"JURY\">Paragraph: The Rangers wore distinctive green outfits and practiced tactics called \
+\"Rogers' \
+ Rules of Ranging,\" which the British considered unconventional. Rogers hired men solely on merit and shocked regular \
+ commanders with his use of Indians and freed slaves.</test:childElement> \
+ <test:childElement ism:classification=\"U\" \
+ ism:ownerProducer=\"USA\" \
+ism:cuiBasic=\"JURY\" \
+ ism:disseminationControls=\"DL_ONLY\"> \
+ <test:grandchildElement ism:classification=\"U\" ism:ownerProducer=\"USA\" ism:cuiBasic=\"JURY\">All Rangers are to be subject to the rules and articles of war; to appear at \
+roll- call \
+every evening, on their own parade, equipped, each with a Firelock, sixty rounds of powder and ball, and a \
+ hatchet, at which time an officer from each company is to inspect the same, to see they are in order, so as \
+ to be ready on any emergency to march at a minute's warning; and before they are dismissed, the necessary \
+ guards are to be draughted, and scouts for the next day appointed</test:grandchildElement> \
+ <test:grandchildElement ism:classification=\"U\" ism:ownerProducer=\"USA\" ism:cuiBasic=\"JURY\">Whenever you are ordered out to the enemies forts or frontiers for \
+discoveries, if your \
+ number be small, march in a single file, keeping at such a distance from each other as to prevent one shot \
+ from killing two men, sending one man, or more, forward, and the like on each side, at the distance of twenty \
+ yards from the main body, if the ground you march over will admit of it, to give the signal to the officer of \
+ the approach of an enemy, and of their number, &amp;c.</test:grandchildElement> \
+ </test:childElement> \
+ </test:parentElement> \
+ </test:root> \
+  ";
+static void ngiis_write_fullbox(AVIOContext * pb, uint8_t version, uint32_t flags) {
+    // A full box has an 8-bit version and 24-bit flag. 
+    uint32_t flags_and_version = (version << 24) | flags;
+    avio_wb32(pb, flags_and_version); /* Version & flags */  //0x vv ff ff ff
+}
+
+static int ngiis_write_idat(AVIOContext *pb, infe* items, uint32_t item_count) {
+    // Extends Box
+    int64_t pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size update later */
+    ffio_wfourcc(pb, "idat");
+
+    for (uint32_t i = 0; i < item_count; i++) {
+        items[i].offset = avio_tell(pb);               // Save location in idat
+        avio_write(pb, items[i].value, items[i].size);    // Write item in idat box
+    }
+
+    return update_size(pb, pos);  
+}
+
+static int ngiis_write_saiz_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+    //Extends Full Box
+    int64_t pos = avio_tell(pb);
+    uint8_t version = 0;
+    uint32_t flags = 1;
+    avio_wb32(pb, 0); /* size update later */
+    ffio_wfourcc(pb, "saiz");
+    ngiis_write_fullbox(pb, version, flags);
+
+    if (flags == 1) {
+        ffio_wfourcc(pb, "klv "); // unsigned int(32) aux_info_type
+        avio_wb32(pb, 0x0); // unsigned int(32) aux_info_type_parameter
+                            // 8-bit integer identifying a specific stream of sample auxiliary information.
+    }
+
+    uint8_t default_sample_info_size = 1;
+    avio_w8(pb, default_sample_info_size); // unsigned int (8) default_sample_info_size
+
+    uint32_t sample_count = 2;
+    avio_wb32(pb, sample_count);
+
+    if (default_sample_info_size == 0) {
+        // unsigned int (8) sample_info_size[ sample_count ];
+    }
+
+    return update_size(pb, pos);  
+}
+
+static int ngiis_write_saio_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+
+    int64_t pos = avio_tell(pb);
+    uint8_t version = 0;
+    uint32_t flags = 1;
+
+    //Full Box
+    avio_wb32(pb, 0); /* size update later */
+    ffio_wfourcc(pb, "saio");
+    ngiis_write_fullbox(pb, version, flags);
+
+    if (flags == 1) {
+        ffio_wfourcc(pb, "klv "); // unsigned int(32) aux_info_type
+        avio_wb32(pb, 0x0);// unsigned int(32) aux_info_type_parameter
+    }
+
+    uint32_t entry_count = mov->nb_frames; // There's 1 timestamp per frame
+    avio_wb32(pb, entry_count);
+    if (version == 0) {
+        for (int i = 0; i < entry_count; i++) {
+            avio_wb32(pb, mov->timestamp_offsets[i]);
+        }
+    }
+    else {
+        // unsigned int (64) offset[ entry_count ];
+    }
+
+
+
+    return update_size(pb, pos);  
+}
+
+static int ngiis_write_iloc_box(AVIOContext *pb, infe* items, uint32_t item_count) {
+    //Full Box - Has a version & flags
+    
+    uint8_t version = 1; // Versions 1 & 2 Provide a Construction Method
+    int64_t pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size update later */
+    ffio_wfourcc(pb, "iloc");
+    ngiis_write_fullbox(pb, version, 0); /* Version & flags */   
+
+    uint8_t offset_size = 4;        // 4 bits {0, 4, 8}
+    uint8_t length_size = 4;        // 4 bits {0, 4, 8}
+    uint8_t base_offset_size = 0;   // 4 bits {0, 4, 8}
+    uint8_t index_size = 0;         // 4 bits {0, 4, 8}
+    avio_w8(pb, (offset_size      << 4) | length_size);
+    avio_w8(pb, (base_offset_size << 4) | index_size); 
+
+    uint32_t item_id = 1;
+    if (version < 2)
+        avio_wb16(pb, item_count);
+    else
+        avio_wb32(pb, item_count); 
+
+    for (int i = 0; i < item_count; i++) {
+        if (version < 2)
+            avio_wb16(pb, items[i].id);
+        else
+            avio_wb32(pb, items[i].id); /* item_id */
+        
+        if (version == 1 || version == 2)
+            avio_wb16(pb, items[i].construction_method); //12 bits reserved, 4 bits construction method
+        
+        avio_wb16(pb, 0); // data_reference_index
+        
+        if (base_offset_size == 0) {
+            ; //Do Nothing
+        } else if (base_offset_size == 4) {
+            ; //avio_wb32() //TODO
+        } else if (base_offset_size == 8) {
+            ; //avio_wb64() //TODO
+        }
+        avio_wb16(pb, 1); // extent_count
+        if ((version == 1 || version == 2)  &&  (index_size > 0)) {
+            // unsigned int (index_size*8) item_reference_index
+        }
+        avio_wb32(pb, items[i].offset); // extent_offset
+        avio_wb32(pb, items[i].size); // extent_length
+    }
+
+    return update_size(pb, pos);  
+}
+
+static int ngiis_write_cdsc_box(AVIOContext *pb, uint16_t from_id, uint16_t to_id) {
+    int64_t cdsc_pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "cdsc");
+    avio_wb16(pb, from_id); /* from_item_id */
+    uint16_t reference_count = 1;
+    avio_wb16(pb, reference_count); /* reference_count */
+    for (int i = 0; i < reference_count; i++) {
+        avio_wb16(pb, to_id); /* to_item_ids */
+    }
+
+    return update_size(pb, cdsc_pos);
+
+}
+
+static int ngiis_write_iref_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+    //TODO - don't hard code box
+    int64_t iinf_pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "iref");
+    ngiis_write_fullbox(pb, 0, 0); /* Version & flags */
+
+    uint16_t from_id = 2;
+    uint16_t to_id = 1;
+    ngiis_write_cdsc_box(pb, from_id, to_id);
+
+    return update_size(pb, iinf_pos);
+}
+
+static int ngiis_write_hdlr_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+    avio_wb32(pb, 33); /* size */
+    ffio_wfourcc(pb, "hdlr");
+    avio_wb32(pb, 0);
+    avio_wb32(pb, 0);
+    ffio_wfourcc(pb, "vide");
+    avio_wb32(pb, 0);
+    avio_wb32(pb, 0);
+    avio_wb32(pb, 0);
+    avio_w8(pb, 0);
+    return 33;
+}
+
+static const char* URI_TYPE_CONTENT_ID = "urn:uuid:aac8ab7d-f591-5437-b7d3-c973d155e253";
+
+static int ngiis_add_infe_item(AVIOContext *pb, struct infe item) {
+
+    int64_t infe_pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "infe");
+    uint8_t version = 2;
+    ngiis_write_fullbox(pb, version, 0); //Version & Flags
+    avio_wb16(pb, item.id); /* item_id */
+    avio_wb16(pb, 0); /* item_protection_index */
+    avio_write(pb, item.item_type, 4); /* item_type */
+    avio_write(pb, item.name, strlen(item.name)+1); /* item_name */
+    
+    int is_uri = !strcmp(item.item_type, "uri ");
+    int is_mime = !strcmp(item.item_type, "mime");
+    if (is_uri) {
+        avio_write(pb, item.uri_type, strlen(item.uri_type)+1); /* item_name */
+    } else if (is_mime) {
+        avio_write(pb, item.content_type, strlen(item.content_type)+1); /* item_name */
+    }
+
+    return update_size(pb, infe_pos);
+}
+
+static int ngiis_write_iinf_box(AVIOContext *pb, struct infe* items, uint32_t item_count) {
+    int64_t iinf_pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "iinf");
+    ngiis_write_fullbox(pb, 0, 0); /* Version & flags */
+
+    avio_wb16(pb, item_count); /* entry_count */
+
+    const char* uri_type_content_id = "urn:uuid:aac8ab7d-f591-5437-b7d3-c973d155e253";
+    for (int i = 0; i < item_count; i++) {
+        ngiis_add_infe_item(pb, items[i]); // stored in mdat
+    }
+
+    return update_size(pb, iinf_pos);
+}
+
+static const char* generate_uuid() {
+    #define MAX 5
+    static int x = 0;
+    if (x >= MAX)
+        x = 0;
+
+    const char* uuids[MAX] = {
+        "urn:uuid:10284822-d9f3-498f-beec-25b200df50bd",
+        "urn:uuid:96a5b76b-4623-4904-9feb-3fffba7676a6",
+        "urn:uuid:e9fa340e-a11d-4cdf-8918-53b46637f5d8",
+        "urn:uuid:2feb0040-4656-48f6-9ef5-761905a02dec",
+        "urn:uuid:2d47b4d2-00e8-4c74-8da3-32209c5d789a",
+    };
+
+    return uuids[x];
+
+}
+
+static int ngiis_write_meta_box_in_track(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+    int size = 0;
+    int64_t pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "meta");
+    ngiis_write_fullbox(pb, 0, 0);
+
+    ngiis_write_hdlr_box(pb, mov, s);
+    
+    #define ITEM_COUNT 1
+    struct infe items[ITEM_COUNT];
+
+    items[0].id = 1;
+    items[0].item_type = "uri ";
+    items[0].name = "Content ID for Parent Track";
+    items[0].content_type = NULL;
+    items[0].uri_type = URI_TYPE_CONTENT_ID;
+    items[0].value = generate_uuid();
+    items[0].size = strlen(items[0].value) + 1;
+    items[0].construction_method = 1; //Store in the value of the content id in the idat as opposed to mdat
+
+    ngiis_write_idat(pb, items, ITEM_COUNT);
+
+    ngiis_write_iinf_box(pb, items, ITEM_COUNT);
+
+    ngiis_write_iloc_box(pb, items, ITEM_COUNT);
+
+    size = update_size(pb, pos);
+    return size;
+}
+
+static int ngiis_write_meta_box_in_moov(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+    //Full box
+    int size = 0;
+    int64_t pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "meta");
+    ngiis_write_fullbox(pb, 0, 0);
+
+    ngiis_write_hdlr_box(pb, mov, s);
+
+    #define ITEM_COUNT 2
+    struct infe items[ITEM_COUNT];
+    {
+        items[0].id = 1;
+        items[0].item_type = "mime";
+        items[0].name = "ODNI ISM XML Security Marking";
+        items[0].content_type = "application/dni-arh+xml";
+        items[0].uri_type = NULL;
+        items[0].value = ism_xml;
+        items[0].size = strlen(items[0].value) + 1;
+        items[0].construction_method = 1; //store in idat
+
+        items[1].id = 2;
+        items[1].item_type = "uri ";
+        items[1].name = "Content ID for ODNI ISM XML Security Marking";
+        items[1].content_type = NULL;
+        items[1].uri_type = URI_TYPE_CONTENT_ID;
+        items[1].value = generate_uuid();
+        items[1].size = strlen(items[1].value) + 1;
+        items[1].construction_method = 1; //store in idat
+    }
+
+    ngiis_write_idat(pb, items, ITEM_COUNT);
+
+    ngiis_write_iinf_box(pb, items, ITEM_COUNT);
+
+    ngiis_write_iref_box(pb, mov, s);
+
+    ngiis_write_iloc_box(pb, items, ITEM_COUNT);
+
+    size = update_size(pb, pos);
+    return size;
+}
+
+static int ngiis_write_timestamps(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+    char timestamp[] = {  
+        // Key
+        0x06, 0x0E, 0x2B, 0x34, 0x02, 0x05, 0x01, 0x01,
+        0x0E, 0x01, 0x03, 0x02, 0x09, 0x00, 0x00, 0x00,
+        
+        // Length
+        0x00, 0x00, 0x00, 0x08, 
+        
+        // Nano Precision Timestamp
+        0x5E, 0x7E, 0x9A, 0x9E, 0x14, 0x81, 0x0A, 0xAD, // Timestamp - an 8 byte unsigned integer representing time measured from the MISP Epoch in nanoseconds.
+        
+        //  Time Transfer Local Set Value
+        't', 'a', 'g',
+        'l', 'e', 'n', 'g', 't', 'h',
+        'U', 'T', 'C', ' ', 'L', 'e', 'a', 'p', ' ', 'S', 'e', 'c', 'o', 'n', 'd', 's',
+
+        ' ', 't', 'a', 'g',
+        'l', 'e', 'n', 'g', 't', 'h', ' ',
+        'D', 'r', 'i', 'f', 't', '-', 'R', 'a', 't', 'e',
+    };
+
+    AVStream* stream = s->streams[0];
+    int64_t frames = stream->nb_frames;
+    mov->nb_frames = frames;
+    mov->timestamp_size = sizeof(timestamp);
+    mov->timestamp_offsets = (uint32_t*) malloc(frames * sizeof(timestamp));
+    uint64_t pos;
+    for (int i = 0; i < frames; i++) {
+        pos = avio_tell(pb);
+        mov->timestamp_offsets[i] = pos;
+        avio_write(pb, timestamp, sizeof(timestamp));
+        mov->mdat_size += sizeof(timestamp);
+
+    }
+    printf("frames: %d\n", stream->nb_frames);
+
+
+    return 0;
+}
+//**************************************NGIIS**************************************//
+
 static int mov_write_trak_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov,
                               MOVTrack *track, AVStream *st)
 {
@@ -3911,6 +4385,8 @@ static int mov_write_trak_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
     mov_write_tkhd_tag(pb, mov, track, st);
 
     av_assert2(mov->use_editlist >= 0);
+
+    ngiis_write_meta_box_in_track(pb, mov, s); //NGIIS
 
     if (track->start_dts != AV_NOPTS_VALUE) {
         if (mov->use_editlist)
@@ -4764,6 +5240,7 @@ static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
     }
 
     mov_write_mvhd_tag(pb, mov);
+    ngiis_write_meta_box_in_moov(pb, mov, s); //NGIIS
     if (mov->mode != MODE_MOV && mov->mode != MODE_AVIF && !mov->iods_skip)
         mov_write_iods_tag(pb, mov);
     for (i = 0; i < mov->nb_streams; i++) {
@@ -7591,6 +8068,51 @@ static int mov_write_header(AVFormatContext *s)
         mov_write_mdat_tag(pb, mov);
     }
 
+    //NGIIS
+    volatile AVFormatContext s2 = *s;
+    // Write Additional Metadata into mdat
+    // e.g. uri items (content id's, timestamps)
+    // const char* content_id = "urn:uuid:b2c31881-088a-5877-b8d5-acfcda9be248";
+    printf("s->nb_streams %d\n", s->nb_streams);
+    printf("s->start_time %d\n", s->start_time);
+    printf("s->duration %d\n", s->duration);
+    AVDictionary* metadata = s->metadata;
+    volatile AVStream* stream = s->streams[0];
+    AVDictionary* stream_metadata = stream->metadata;
+    stream_metadata;
+    stream->side_data;
+    printf("frames: %d\n", stream->nb_frames);
+    printf("stream->stream->nb_side_data %d\n", stream->nb_side_data);
+    const char* klv_timestamp_key = "urn:uuid:b2c31881-088a-5877-b8d5-acfcda9be248";
+    char klv_key[] = {  
+        // Key
+        0x06, 0x0E, 0x2B, 0x34, 0x02, 0x05, 0x01, 0x01,
+        0x0E, 0x01, 0x03, 0x02, 0x09, 0x00, 0x00, 0x00,
+        
+        // Length
+        0x00, 0x00, 0x00, 0x08, 
+        
+        // Nano Precision Timestamp
+        0x5E, 0x7E, 0x9A, 0x9E, 0x14, 0x81, 0x0A, 0xAD, // Timestamp - an 8 byte unsigned integer representing time measured from the MISP Epoch in nanoseconds.
+        
+        //  Time Transfer Local Set Value
+        't', 'a', 'g',
+        'l', 'e', 'n', 'g', 't', 'h',
+        'U', 'T', 'C', ' ', 'L', 'e', 'a', 'p', ' ', 'S', 'e', 'c', 'o', 'n', 'd', 's',
+
+        ' ', 't', 'a', 'g',
+        'l', 'e', 'n', 'g', 't', 'h', ' ',
+        'D', 'r', 'i', 'f', 't', '-', 'R', 'a', 't', 'e',
+    };
+    
+    // size_t size = strlen(content_id) + 1;
+    size_t size = sizeof(klv_key);
+    mov->klv_position = avio_tell(pb);
+    mov->klv_length = size;
+    avio_write(pb, klv_key, size);
+    mov->mdat_size += size;
+    //NGIIS 
+
     ff_parse_creation_time_metadata(s, &mov->time, 1);
     if (mov->time)
         mov->time += 0x7C25B080; // 1970 based -> 1904 based
@@ -7739,6 +8261,7 @@ static int mov_write_trailer(AVFormatContext *s)
 {
     MOVMuxContext *mov = s->priv_data;
     AVIOContext *pb = s->pb;
+    ngiis_write_timestamps(pb, mov, s); //NGIIS_TRAILER
     int res = 0;
     int i;
     int64_t moov_pos;

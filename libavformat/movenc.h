@@ -184,6 +184,20 @@ typedef enum {
     MOV_PRFT_NB
 } MOVPrftBox;
 
+//NGIIS
+typedef struct infe {
+    uint32_t id;                 // Starts at 1
+    const char* item_type;       // mime, uri , etc, 
+    const char* name;            // Optional, Human readable description
+    const char* content_type;    //
+    const char* uri_type;        // Used when item_type='uri ', identifies which type of uri item
+    void* value;                 // The actual data to be stored into the idat
+    uint32_t size;               // The size in bytes of void* value
+    uint32_t offset;             // The number of bytes from the beginning of the idat to the first byte of data
+    uint8_t construction_method; // 0=mdat  1=idat  2=item
+} infe;
+//NGIIS
+
 typedef struct MOVMuxContext {
     const AVClass *av_class;
     int     mode;
@@ -250,6 +264,15 @@ typedef struct MOVMuxContext {
     int avif_extent_length[2];   // index 0 is YUV and 1 is Alpha.
     int is_animated_avif;
     int avif_loop_count;
+    //NGIIS
+    infe* items;                
+    uint32_t item_count;       // The number of idat data items
+    uint64_t nb_frames;
+    uint32_t timestamp_size;
+    uint32_t* timestamp_offsets; // There will be one timestamp_offset for each frame
+    uint64_t klv_position;
+    uint64_t klv_length;
+    //NGIIS
 } MOVMuxContext;
 
 #define FF_MOV_FLAG_RTP_HINT              (1 <<  0)
