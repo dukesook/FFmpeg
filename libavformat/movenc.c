@@ -4326,44 +4326,77 @@ static int ngiis_write_meta_box_in_moov(AVIOContext *pb, MOVMuxContext *mov, AVF
 }
 
 static int ngiis_write_timestamps(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
-    char timestamp[] = {  
-        // Key
-        0x06, 0x0E, 0x2B, 0x34, 0x02, 0x05, 0x01, 0x01,
-        0x0E, 0x01, 0x03, 0x02, 0x09, 0x00, 0x00, 0x00,
-        
-        // Length
-        0x00, 0x00, 0x00, 0x08, 
-        
-        // Nano Precision Timestamp
-        0x5E, 0x7E, 0x9A, 0x9E, 0x14, 0x81, 0x0A, 0xAD, // Timestamp - an 8 byte unsigned integer representing time measured from the MISP Epoch in nanoseconds.
-        
-        //  Time Transfer Local Set Value
-        't', 'a', 'g',
-        'l', 'e', 'n', 'g', 't', 'h',
-        'U', 'T', 'C', ' ', 'L', 'e', 'a', 'p', ' ', 'S', 'e', 'c', 'o', 'n', 'd', 's',
-
-        ' ', 't', 'a', 'g',
-        'l', 'e', 'n', 'g', 't', 'h', ' ',
-        'D', 'r', 'i', 'f', 't', '-', 'R', 'a', 't', 'e',
-    };
 
     AVStream* stream = s->streams[0];
     int64_t frames = stream->nb_frames;
     mov->nb_frames = frames;
-    mov->timestamp_size = sizeof(timestamp);
-    mov->timestamp_offsets = (uint32_t*) malloc(frames * sizeof(timestamp));
     uint64_t pos;
+
+    typedef union Union {
+        uint32_t u;
+        int32_t i;
+        float f;
+    } Union;
+
+    unsigned char klv_key[16] = { 0x06, 0x0E, 0x2B, 0x34, 0x02, 0x05, 0x01, 0x01, 0x0E, 0x01, 0x03, 0x02, 0x09, 0x00, 0x00, 0x00 };
+    uint32_t length = 0x0000002C; //8 byte timestamp + 44 bytes  
+    uint64_t nano_precision_timestamp = 0x547E9A9E14810AAD; // Timestamp - an 8 byte unsigned integer representing time measured from the MISP Epoch in nanoseconds.
+    Union time_transfer_local_set[] = {
+        {.u = 1},  // document_version
+        {.i = 2},  // utc_leap_second_offset
+        {.u = 3},  // time_transfer_parameters
+        {.f = 4},  // sychornization_pulse_frequency
+        {.u = 5},  // unlock_time
+        {.u = 6},  // last_synchronization_difference
+        {.f = 7},  // drift_rate
+        {.u = 8},  // signal_source_delay
+        {.u = 9},  // receptor_clock_uncertainty
+    };
+    
+    uint32_t timestamp_size = sizeof(klv_key) + sizeof(length) + sizeof(nano_precision_timestamp) + sizeof(time_transfer_local_set);
+    printf("timestamp size: %d\n", timestamp_size);
+
+    mov->timestamp_size = timestamp_size;
+    mov->timestamp_offsets = (uint32_t*) malloc(frames * timestamp_size);
     for (int i = 0; i < frames; i++) {
         pos = avio_tell(pb);
         mov->timestamp_offsets[i] = pos;
-        avio_write(pb, timestamp, sizeof(timestamp));
-        mov->mdat_size += sizeof(timestamp);
+        avio_write(pb, klv_key, sizeof(klv_key));
+        avio_wb32(pb, length);
+        avio_wb64(pb, nano_precision_timestamp);
+        avio_wb32(pb, time_transfer_local_set[0].u);
+        avio_wb32(pb, time_transfer_local_set[1].i);
+        avio_wb32(pb, time_transfer_local_set[2].u);
+        avio_wb32(pb, time_transfer_local_set[3].f);
+        avio_wb32(pb, time_transfer_local_set[4].u);
+        avio_wb32(pb, time_transfer_local_set[5].u);
+        avio_wb32(pb, time_transfer_local_set[6].f);
+        avio_wb32(pb, time_transfer_local_set[7].u);
+        avio_wb32(pb, time_transfer_local_set[8].u);
+        mov->mdat_size += timestamp_size;
 
     }
     printf("frames: %d\n", stream->nb_frames);
 
 
     return 0;
+}
+
+static int ngiis_write_ftyp(AVIOContext* pb) {
+    int64_t pos = avio_tell(pb);
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "ftyp");
+
+    //Major Brand
+    ffio_wfourcc(pb, "isoa");
+    avio_wb32(pb, 0); //Minor number
+
+    //Minor Brands
+    ffio_wfourcc(pb, "isoa");
+    ffio_wfourcc(pb, "geo1");
+    ffio_wfourcc(pb, "unif");
+
+    return update_size(pb, pos);
 }
 //**************************************NGIIS**************************************//
 
@@ -5240,7 +5273,6 @@ static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
     }
 
     mov_write_mvhd_tag(pb, mov);
-    ngiis_write_meta_box_in_moov(pb, mov, s); //NGIIS
     if (mov->mode != MODE_MOV && mov->mode != MODE_AVIF && !mov->iods_skip)
         mov_write_iods_tag(pb, mov);
     for (i = 0; i < mov->nb_streams; i++) {
@@ -5256,7 +5288,7 @@ static int mov_write_moov_tag(AVIOContext *pb, MOVMuxContext *mov,
 
     if (mov->mode == MODE_PSP)
         mov_write_uuidusmt_tag(pb, s);
-    else if (mov->mode != MODE_AVIF)
+    else if (mov->mode != MODE_AVIF && (mov->mode != MODE_GIMI)) //NGIIS - I don't want the udat box in the file
         mov_write_udta_tag(pb, mov, s);
 
     return update_size(pb, pos);
@@ -6039,6 +6071,13 @@ static int mov_write_ftyp_tag(AVIOContext *pb, AVFormatContext *s)
     int64_t pos = avio_tell(pb);
     int has_h264 = 0, has_av1 = 0, has_video = 0, has_dolby = 0;
     int i;
+
+    //NGIIS
+    if (mov->mode == MODE_GIMI) {
+        ngiis_write_ftyp(pb);
+        return 0;
+    }
+    //NGIIS
 
     for (i = 0; i < s->nb_streams; i++) {
         AVStream *st = s->streams[i];
@@ -7579,6 +7618,7 @@ static int mov_init(AVFormatContext *s)
     else if (IS_MODE(ismv, ISMV)) mov->mode = MODE_ISM;
     else if (IS_MODE(f4v,   F4V)) mov->mode = MODE_F4V;
     else if (IS_MODE(avif, AVIF)) mov->mode = MODE_AVIF;
+    else if (IS_MODE(raw_mp4, MP4_RAW)) mov->mode = MODE_GIMI; //NGIIS_mode
 #undef IS_MODE
 
     if (mov->flags & FF_MOV_FLAG_DELAY_MOOV)
@@ -8069,48 +8109,48 @@ static int mov_write_header(AVFormatContext *s)
     }
 
     //NGIIS
-    volatile AVFormatContext s2 = *s;
-    // Write Additional Metadata into mdat
-    // e.g. uri items (content id's, timestamps)
-    // const char* content_id = "urn:uuid:b2c31881-088a-5877-b8d5-acfcda9be248";
-    printf("s->nb_streams %d\n", s->nb_streams);
-    printf("s->start_time %d\n", s->start_time);
-    printf("s->duration %d\n", s->duration);
-    AVDictionary* metadata = s->metadata;
-    volatile AVStream* stream = s->streams[0];
-    AVDictionary* stream_metadata = stream->metadata;
-    stream_metadata;
-    stream->side_data;
-    printf("frames: %d\n", stream->nb_frames);
-    printf("stream->stream->nb_side_data %d\n", stream->nb_side_data);
-    const char* klv_timestamp_key = "urn:uuid:b2c31881-088a-5877-b8d5-acfcda9be248";
-    char klv_key[] = {  
-        // Key
-        0x06, 0x0E, 0x2B, 0x34, 0x02, 0x05, 0x01, 0x01,
-        0x0E, 0x01, 0x03, 0x02, 0x09, 0x00, 0x00, 0x00,
-        
-        // Length
-        0x00, 0x00, 0x00, 0x08, 
-        
-        // Nano Precision Timestamp
-        0x5E, 0x7E, 0x9A, 0x9E, 0x14, 0x81, 0x0A, 0xAD, // Timestamp - an 8 byte unsigned integer representing time measured from the MISP Epoch in nanoseconds.
-        
-        //  Time Transfer Local Set Value
-        't', 'a', 'g',
-        'l', 'e', 'n', 'g', 't', 'h',
-        'U', 'T', 'C', ' ', 'L', 'e', 'a', 'p', ' ', 'S', 'e', 'c', 'o', 'n', 'd', 's',
+    volatile AVFormatContext s2 = *s; 
+    {
 
-        ' ', 't', 'a', 'g',
-        'l', 'e', 'n', 'g', 't', 'h', ' ',
-        'D', 'r', 'i', 'f', 't', '-', 'R', 'a', 't', 'e',
-    };
+    // printf("s->nb_streams %d\n", s->nb_streams);
+    // printf("s->start_time %d\n", s->start_time);
+    // printf("s->duration %d\n", s->duration);
+    // AVDictionary* metadata = s->metadata;
+    // volatile AVStream* stream = s->streams[0];
+    // AVDictionary* stream_metadata = stream->metadata;
+    // stream_metadata;
+    // stream->side_data;
+    // printf("frames: %d\n", stream->nb_frames);
+    // printf("stream->stream->nb_side_data %d\n", stream->nb_side_data);
+    // const char* klv_timestamp_key = "urn:uuid:b2c31881-088a-5877-b8d5-acfcda9be248";
+    // char klv_key[] = {  
+    //     // Key
+    //     0x06, 0x0E, 0x2B, 0x34, 0x02, 0x05, 0x01, 0x01,
+    //     0x0E, 0x01, 0x03, 0x02, 0x09, 0x00, 0x00, 0x00,
+        
+    //     // Length
+    //     0x00, 0x00, 0x00, 0x08, 
+        
+    //     // Nano Precision Timestamp
+    //     0x5E, 0x7E, 0x9A, 0x9E, 0x14, 0x81, 0x0A, 0xAD, // Timestamp - an 8 byte unsigned integer representing time measured from the MISP Epoch in nanoseconds.
+        
+    //     //  Time Transfer Local Set Value
+    //     't', 'a', 'g',
+    //     'l', 'e', 'n', 'g', 't', 'h',
+    //     'U', 'T', 'C', ' ', 'L', 'e', 'a', 'p', ' ', 'S', 'e', 'c', 'o', 'n', 'd', 's',
+
+    //     ' ', 't', 'a', 'g',
+    //     'l', 'e', 'n', 'g', 't', 'h', ' ',
+    //     'D', 'r', 'i', 'f', 't', '-', 'R', 'a', 't', 'e',
+    // };
     
-    // size_t size = strlen(content_id) + 1;
-    size_t size = sizeof(klv_key);
-    mov->klv_position = avio_tell(pb);
-    mov->klv_length = size;
-    avio_write(pb, klv_key, size);
-    mov->mdat_size += size;
+    // // size_t size = strlen(content_id) + 1;
+    // size_t size = sizeof(klv_key);
+    // mov->klv_position = avio_tell(pb);
+    // mov->klv_length = size;
+    // avio_write(pb, klv_key, size);
+    // mov->mdat_size += size;
+    }
     //NGIIS 
 
     ff_parse_creation_time_metadata(s, &mov->time, 1);
@@ -8328,6 +8368,8 @@ static int mov_write_trailer(AVFormatContext *s)
             avio_wb64(pb, mov->mdat_size + 16);
         }
         avio_seek(pb, mov->reserved_moov_size > 0 ? mov->reserved_header_pos : moov_pos, SEEK_SET);
+
+        ngiis_write_meta_box_in_moov(pb, mov, s); //NGIIS_trailer
 
         if (mov->flags & FF_MOV_FLAG_FASTSTART) {
             av_log(s, AV_LOG_INFO, "Starting second pass: moving the moov atom to the beginning of the file\n");

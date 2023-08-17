@@ -44,6 +44,7 @@
 #define MODE_ISM  0x40
 #define MODE_F4V  0x80
 #define MODE_AVIF 0x100
+#define MODE_GIMI 0x120 //NGIIS
 
 typedef struct MOVIentry {
     uint64_t     pos;
