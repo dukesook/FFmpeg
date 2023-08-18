@@ -4183,7 +4183,7 @@ static int ngiis_write_hdlr_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatCon
     ffio_wfourcc(pb, "hdlr");
     avio_wb32(pb, 0);
     avio_wb32(pb, 0);
-    ffio_wfourcc(pb, "vide");
+    ffio_wfourcc(pb, "meta");
     avio_wb32(pb, 0);
     avio_wb32(pb, 0);
     avio_wb32(pb, 0);
