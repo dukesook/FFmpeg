@@ -197,6 +197,20 @@ typedef struct infe {
     uint32_t offset;             // The number of bytes from the beginning of the idat to the first byte of data
     uint8_t construction_method; // 0=mdat  1=idat  2=item
 } infe;
+typedef union Union {
+    uint8_t b; //byte
+    uint32_t u;
+    int32_t i;
+    float f;
+} Union;
+// enum data_type_t { UINT32_T, INT32_T, FLOAT, UINT8_T, INT8_T };
+typedef struct tre_t {
+    uint8_t tag;    //BER OID - msb is a continuation bit
+    uint8_t length; //BER Short or Long form
+    Union value;
+    // enum data_type_t data_type;
+    // void (*write)(AVIOContext *s, void* value);
+} tre_t;
 //NGIIS
 
 typedef struct MOVMuxContext {

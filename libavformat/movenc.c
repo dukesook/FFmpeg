@@ -4326,34 +4326,34 @@ static int ngiis_write_meta_box_in_moov(AVIOContext *pb, MOVMuxContext *mov, AVF
 }
 
 static int ngiis_write_timestamps(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+    // Write the timestamp values in the mdat. 
+    // Save the pointer locations for now and write them later in the file
 
     AVStream* stream = s->streams[0];
     int64_t frames = stream->nb_frames;
     mov->nb_frames = frames;
     uint64_t pos;
 
-    typedef union Union {
-        uint32_t u;
-        int32_t i;
-        float f;
-    } Union;
-
     unsigned char klv_key[16] = { 0x06, 0x0E, 0x2B, 0x34, 0x02, 0x05, 0x01, 0x01, 0x0E, 0x01, 0x03, 0x02, 0x09, 0x00, 0x00, 0x00 };
-    uint32_t length = 0x0000002C; //8 byte timestamp + 44 bytes  
+    
+    // The byte count for the Nano Precision Time Stamp + Time Transfer Local Set
+    uint32_t klv_length = 0x00000000; // BER Short or Long form encoding. See MISB Handbook 8.3.1
+
     uint64_t nano_precision_timestamp = 0x547E9A9E14810AAD; // Timestamp - an 8 byte unsigned integer representing time measured from the MISP Epoch in nanoseconds.
-    Union time_transfer_local_set[] = {
-        {.u = 1},  // document_version
-        {.i = 2},  // utc_leap_second_offset
-        {.u = 3},  // time_transfer_parameters
-        {.f = 4},  // sychornization_pulse_frequency
-        {.u = 5},  // unlock_time
-        {.u = 6},  // last_synchronization_difference
-        {.f = 7},  // drift_rate
-        {.u = 8},  // signal_source_delay
-        {.u = 9},  // receptor_clock_uncertainty
+    // enum data_type_t type = UINT32_T;
+    tre_t time_transfer_local_set[] = {
+        {.tag = 1, .length = 4, .value.u = 3},          // Document Version
+        {.tag = 2, .length = 4, .value.i = 2},          // UTC Leap Second Offset
+        {.tag = 3, .length = 4, .value.u = 3},          // Time Transfer Parameters
+        {.tag = 4, .length = 4, .value.f = (float)4},   // Synchronization Pulse
+        {.tag = 5, .length = 4, .value.u = 5},          // Unlock Time
+        {.tag = 6, .length = 4, .value.u = 6},          // Last Synchronization Difference
+        {.tag = 7, .length = 4, .value.f = (float)7},   // Drift Rate
+        {.tag = 8, .length = 4, .value.u = 8},          // Signal Source Delay
+        {.tag = 9, .length = 4, .value.u = 9},          // Receptor Clock Uncertainty
     };
     
-    uint32_t timestamp_size = sizeof(klv_key) + sizeof(length) + sizeof(nano_precision_timestamp) + sizeof(time_transfer_local_set);
+    uint32_t timestamp_size = sizeof(klv_key) + sizeof(klv_length) + sizeof(nano_precision_timestamp) + sizeof(time_transfer_local_set);
     printf("timestamp size: %d\n", timestamp_size);
 
     mov->timestamp_size = timestamp_size;
@@ -4361,18 +4361,22 @@ static int ngiis_write_timestamps(AVIOContext *pb, MOVMuxContext *mov, AVFormatC
     for (int i = 0; i < frames; i++) {
         pos = avio_tell(pb);
         mov->timestamp_offsets[i] = pos;
+
+        //Key
         avio_write(pb, klv_key, sizeof(klv_key));
-        avio_wb32(pb, length);
+        
+        //Length
+        avio_wb32(pb, klv_length);
+        
+        //Value
         avio_wb64(pb, nano_precision_timestamp);
-        avio_wb32(pb, time_transfer_local_set[0].u);
-        avio_wb32(pb, time_transfer_local_set[1].i);
-        avio_wb32(pb, time_transfer_local_set[2].u);
-        avio_wb32(pb, time_transfer_local_set[3].f);
-        avio_wb32(pb, time_transfer_local_set[4].u);
-        avio_wb32(pb, time_transfer_local_set[5].u);
-        avio_wb32(pb, time_transfer_local_set[6].f);
-        avio_wb32(pb, time_transfer_local_set[7].u);
-        avio_wb32(pb, time_transfer_local_set[8].u);
+        for (int j = 0; j < 9; j++) {
+            tre_t tre = time_transfer_local_set[j];
+            
+            avio_w8(pb, tre.tag); //Tag
+            avio_w8(pb, tre.length); //Length
+            avio_wb32(pb, tre.value.u); //Value
+        }
         mov->mdat_size += timestamp_size;
 
     }
