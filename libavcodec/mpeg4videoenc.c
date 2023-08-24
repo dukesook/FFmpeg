@@ -1412,7 +1412,7 @@ const FFCodec ff_mpeg4_encoder = {
 //*********************************NGIIS*********************************//
 const FFCodec ff_mpeg4_raw_encoder = {
     .p.name         = "mpeg4_raw",
-    CODEC_LONG_NAME("MPEG-4 part 2"),
+    CODEC_LONG_NAME("NGIIS codec for raw mp4s"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_MPEG4_RAW,
     // .p.id           = AV_CODEC_ID_MPEG4,

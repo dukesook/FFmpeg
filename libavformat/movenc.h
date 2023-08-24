@@ -280,6 +280,7 @@ typedef struct MOVMuxContext {
     int is_animated_avif;
     int avif_loop_count;
     //NGIIS
+    int output_bit_depth; // Scale 16 bit video to 8 bits using dynamic scaling algorithm
     infe* items;                
     uint32_t item_count;       // The number of idat data items
     uint64_t nb_frames;
@@ -287,6 +288,7 @@ typedef struct MOVMuxContext {
     uint32_t* timestamp_offsets; // There will be one timestamp_offset for each frame
     uint64_t klv_position;
     uint64_t klv_length;
+    uint8_t bit_depth;
     //NGIIS
 } MOVMuxContext;
 

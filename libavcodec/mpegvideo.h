@@ -538,6 +538,7 @@ typedef struct MpegEncContext {
     int noise_reduction;
 
     int intra_penalty;
+    int ngiis_scale; //scale from 16 to 8 bits using a scaling algorithm
 } MpegEncContext;
 
 

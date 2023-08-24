@@ -1760,7 +1760,6 @@ static void draw_edges(uint8_t *buf, int wrap, int width, int height, int w, int
 }
 
 static void simple_write(uint8_t* input, uint8_t* output, size_t pkt_size) {
-    printf("Simple_write()\n");
     for (int i = 0; i < pkt_size; i++) {
         output[i] = input[i];
     }      
@@ -1846,7 +1845,7 @@ int ff_uncv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
     MpegEncContext *s = avctx->priv_data;
     int i, ret;
     int context_count = s->slice_context_count;
-    uint8_t bpp = 1; //bits per pixel
+    uint8_t bpp = 1; //default bits per pixel
     enum AVPixelFormat input_format;
     size_t pkt_size;
     void (*write_function)(uint8_t*, uint8_t*, size_t) = &simple_write;
@@ -1875,13 +1874,14 @@ int ff_uncv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
             bpp = 1; 
             break;
         case AV_PIX_FMT_GRAY16LE:
-            write_function = &uncv_write_gray16le_scale_to_8_bits;
-            // s->avctx->pix_fmt = AV_PIX_FMT_GRAY8;
-            bpp = 1; 
-            break;
-
-            write_function = &uncv_write_gray16le;
-            bpp = 2; 
+            if (s->ngiis_scale) {
+                write_function = &uncv_write_gray16le_scale_to_8_bits; 
+                bpp = 1; 
+            }
+            else {
+                write_function = &uncv_write_gray16le;
+                bpp = 2; 
+            }
             break;
         default:
             printf("WARNING! - unhandled input pixel format: %d\n", input_format);

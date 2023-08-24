@@ -119,7 +119,8 @@ static const AVOption options[] = {
     { "wallclock", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = MOV_PRFT_SRC_WALLCLOCK}, 0, 0, AV_OPT_FLAG_ENCODING_PARAM, "prft"},
     { "pts", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = MOV_PRFT_SRC_PTS}, 0, 0, AV_OPT_FLAG_ENCODING_PARAM, "prft"},
     { "empty_hdlr_name", "write zero-length name string in hdlr atoms within mdia and minf atoms", offsetof(MOVMuxContext, empty_hdlr_name), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, AV_OPT_FLAG_ENCODING_PARAM},
-    { "movie_timescale", "set movie timescale", offsetof(MOVMuxContext, movie_timescale), AV_OPT_TYPE_INT, {.i64 = MOV_TIMESCALE}, 1, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM},
+    { "movie_timescale", "set movie timescale",           offsetof(MOVMuxContext, movie_timescale),  AV_OPT_TYPE_INT, {.i64 = MOV_TIMESCALE}, 1, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM},
+    { "output_bit_depth", "scale 16 bit video to 8 bits", offsetof(MOVMuxContext, output_bit_depth), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM},
     { NULL },
 };
 
@@ -2334,6 +2335,9 @@ static void write_uncC(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, 
     uint16_t component_count;        // Grayscale = 1, RGB = 3
     enum AVPixelFormat format;
 
+    printf("uncC mov->output_bit_depth: %d\n", mov->output_bit_depth);
+    printf("uncC movie_timescale: %d\n", mov->movie_timescale);
+
     format = track->par->format;
     if (format == AV_PIX_FMT_GRAY8) {
             printf("AV_PIX_FMT_GRAY8\n");
@@ -2348,7 +2352,10 @@ static void write_uncC(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, 
     else if (format == AV_PIX_FMT_GRAY16LE) {
             component_count = 1;
             bit_depth = 16;
-            bit_depth = 8;
+            // bit_depth = 8; // //TEMPORARY
+            if (mov->output_bit_depth) {
+                bit_depth = mov->output_bit_depth;
+            }
             printf("AV_PIX_FMT_GRAY16LE\n");
     }
     else {
@@ -4053,10 +4060,10 @@ static int ngiis_write_saiz_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatCon
                             // 8-bit integer identifying a specific stream of sample auxiliary information.
     }
 
-    uint8_t default_sample_info_size = 1;
+    uint8_t default_sample_info_size = mov->timestamp_size;
     avio_w8(pb, default_sample_info_size); // unsigned int (8) default_sample_info_size
 
-    uint32_t sample_count = 2;
+    uint32_t sample_count = mov->nb_frames;
     avio_wb32(pb, sample_count);
 
     if (default_sample_info_size == 0) {
@@ -4337,47 +4344,58 @@ static int ngiis_write_timestamps(AVIOContext *pb, MOVMuxContext *mov, AVFormatC
     unsigned char klv_key[16] = { 0x06, 0x0E, 0x2B, 0x34, 0x02, 0x05, 0x01, 0x01, 0x0E, 0x01, 0x03, 0x02, 0x09, 0x00, 0x00, 0x00 };
     
     // The byte count for the Nano Precision Time Stamp + Time Transfer Local Set
-    uint32_t klv_length = 0x00000000; // BER Short or Long form encoding. See MISB Handbook 8.3.1
+    uint8_t value_length = 0x00000000; // BER Short or Long form encoding. See MISB Handbook 8.3.1
 
-    uint64_t nano_precision_timestamp = 0x547E9A9E14810AAD; // Timestamp - an 8 byte unsigned integer representing time measured from the MISP Epoch in nanoseconds.
+    uint64_t nano_precision_timestamp = 0x547E9A9E1481AAAA; // Timestamp - an 8 byte unsigned integer representing time measured from the MISP Epoch in nanoseconds.
     // enum data_type_t type = UINT32_T;
+    uint8_t tre_count = 9;
     tre_t time_transfer_local_set[] = {
         {.tag = 1, .length = 4, .value.u = 3},          // Document Version
         {.tag = 2, .length = 4, .value.i = 2},          // UTC Leap Second Offset
-        {.tag = 3, .length = 4, .value.u = 3},          // Time Transfer Parameters
-        {.tag = 4, .length = 4, .value.f = (float)4},   // Synchronization Pulse
-        {.tag = 5, .length = 4, .value.u = 5},          // Unlock Time
-        {.tag = 6, .length = 4, .value.u = 6},          // Last Synchronization Difference
-        {.tag = 7, .length = 4, .value.f = (float)7},   // Drift Rate
-        {.tag = 8, .length = 4, .value.u = 8},          // Signal Source Delay
-        {.tag = 9, .length = 4, .value.u = 9},          // Receptor Clock Uncertainty
+        {.tag = 3, .length = 4, .value.u = 0},          // Time Transfer Parameters
+        {.tag = 4, .length = 4, .value.f = 1.0},        // Synchronization Pulse Frequency
+        {.tag = 5, .length = 4, .value.u = 0},          // Unlock Time
+        {.tag = 6, .length = 4, .value.u = 0},          // Last Synchronization Difference
+        {.tag = 7, .length = 4, .value.f = -17.2},      // Drift Rate - units in microseconds/second
+        {.tag = 8, .length = 4, .value.u = 0},          // Signal Source Delay
+        {.tag = 9, .length = 4, .value.u = 33},         // Receptor Clock Uncertainty
     };
     
-    uint32_t timestamp_size = sizeof(klv_key) + sizeof(klv_length) + sizeof(nano_precision_timestamp) + sizeof(time_transfer_local_set);
-    printf("timestamp size: %d\n", timestamp_size);
+    value_length =  sizeof(nano_precision_timestamp) + (sizeof(tre_t) * tre_count);
+    uint32_t total_timestamp_size = sizeof(klv_key) + 
+                                    sizeof(value_length) + 
+                                    value_length;
+    if (total_timestamp_size > 127) {
+        exit(1); // If mimd metadata is over 127, then non-trivial BER encoding is required
+    }
 
-    mov->timestamp_size = timestamp_size;
-    mov->timestamp_offsets = (uint32_t*) malloc(frames * timestamp_size);
+    mov->timestamp_size = total_timestamp_size;
+    mov->timestamp_offsets = (uint32_t*) malloc(frames * total_timestamp_size);
     for (int i = 0; i < frames; i++) {
         pos = avio_tell(pb);
         mov->timestamp_offsets[i] = pos;
 
         //Key
         avio_write(pb, klv_key, sizeof(klv_key));
+        mov->mdat_size += sizeof(klv_key);
         
         //Length
-        avio_wb32(pb, klv_length);
+        avio_w8(pb, value_length);
+        mov->mdat_size += sizeof(value_length);
         
         //Value
         avio_wb64(pb, nano_precision_timestamp);
-        for (int j = 0; j < 9; j++) {
+        mov->mdat_size += sizeof(nano_precision_timestamp);
+        
+        for (int j = 0; j < tre_count; j++) {
             tre_t tre = time_transfer_local_set[j];
             
             avio_w8(pb, tre.tag); //Tag
             avio_w8(pb, tre.length); //Length
             avio_wb32(pb, tre.value.u); //Value
+            mov->mdat_size += sizeof(tre.tag) + sizeof(tre.length) + sizeof(tre.value);
         }
-        mov->mdat_size += timestamp_size;
+        // mov->mdat_size += timestamp_size;
 
     }
     printf("frames: %d\n", stream->nb_frames);
@@ -7605,6 +7623,7 @@ static int mov_create_dvd_sub_decoder_specific_info(MOVTrack *track,
 static int mov_init(AVFormatContext *s)
 {
     MOVMuxContext *mov = s->priv_data;
+    printf("mov->movie_timescale: %d\n", mov->movie_timescale);
     int i, ret;
 
     mov->fc = s;
