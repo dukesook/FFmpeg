@@ -190,6 +190,7 @@ typedef enum {
     MOV_PRFT_NB
 } MOVPrftBox;
 
+
 typedef struct MOVMuxContext {
     const AVClass *av_class;
     int     mode;
@@ -257,6 +258,11 @@ typedef struct MOVMuxContext {
     int avif_extent_length[2];   // index 0 is YUV and 1 is Alpha.
     int is_animated_avif;
     int avif_loop_count;
+
+    uint32_t saiz_sample_count;
+    uint32_t saio_entry_count;
+    uint32_t* timestamp_offsets; // See nb_frames for the number of entries
+    uint32_t* content_id_offsets; // See nb_frames for the number of entries
 } MOVMuxContext;
 
 #define FF_MOV_FLAG_RTP_HINT              (1 <<  0)

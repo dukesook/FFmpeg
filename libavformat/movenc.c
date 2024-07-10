@@ -72,6 +72,7 @@
 #include "version.h"
 #include "vpcc.h"
 #include "vvc.h"
+#include "gimi.h"
 
 static const AVOption options[] = {
     { "brand",    "Override major brand", offsetof(MOVMuxContext, major_brand),   AV_OPT_TYPE_STRING, {.str = NULL}, .flags = AV_OPT_FLAG_ENCODING_PARAM },
@@ -2862,6 +2863,8 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
             mov_write_aux_tag(pb, "auxi");
     }
 
+    gimi_write_taic_box(pb, track);
+
     return update_size(pb, pos);
 }
 
@@ -3192,6 +3195,7 @@ static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
 {
     int64_t pos = avio_tell(pb);
     int ret = 0;
+    uint64_t nb_frames = (uint64_t) s->streams[0]->nb_frames;
 
     avio_wb32(pb, 0); /* size */
     ffio_wfourcc(pb, "stbl");
@@ -3223,6 +3227,13 @@ static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
     if (track->par->codec_id == AV_CODEC_ID_OPUS || track->par->codec_id == AV_CODEC_ID_AAC) {
         mov_preroll_write_stbl_atoms(pb, track);
     }
+
+    // Write Timestamps
+    gimi_write_frame_timestamp_metadata(pb, mov->timestamp_offsets, nb_frames);
+
+    // Write Content Ids
+    gimi_write_frame_content_id_metadata(pb, mov->content_id_offsets, nb_frames);
+
     return update_size(pb, pos);
 }
 
@@ -4159,6 +4170,11 @@ static int mov_write_trak_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
     int chunk_backup = track->chunkCount;
     int ret;
 
+    // Temporary - Ignore audio tracks
+    if (track->par->codec_type == AVMEDIA_TYPE_AUDIO)
+        return 0;
+    // Temporary - Ignore audio tracks
+
     /* If we want to have an empty moov, but some samples already have been
      * buffered (delay_moov), pretend that no samples have been written yet. */
     if (mov->flags & FF_MOV_FLAG_EMPTY_MOOV)
@@ -4169,6 +4185,8 @@ static int mov_write_trak_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
     mov_write_tkhd_tag(pb, mov, track, st);
 
     av_assert2(mov->use_editlist >= 0);
+
+    gimi_write_meta_box_in_track(pb, mov, s);
 
     if (track->start_dts != AV_NOPTS_VALUE) {
         if (mov->use_editlist)
@@ -5935,6 +5953,11 @@ static int mov_write_ftyp_tag(AVIOContext *pb, AVFormatContext *s)
 
     if (has_id3)
         ffio_wfourcc(pb, "aid3");
+
+    // TODO: Don't Hard Code to always execute
+    if (1) {
+        gimi_write_brands(pb);
+    }
 
     return update_size(pb, pos);
 }
@@ -8326,6 +8349,11 @@ static int mov_write_trailer(AVFormatContext *s)
     int res = 0;
     int i;
     int64_t moov_pos;
+    int64_t nb_frames = s->streams[0]->nb_frames;
+
+    gimi_write_frame_timestamp_values(pb, mov, nb_frames);
+
+    gimi_write_frame_content_id_values(pb, mov, nb_frames);
 
     if (mov->need_rewrite_extradata) {
         for (i = 0; i < mov->nb_streams; i++) {
@@ -8410,6 +8438,8 @@ static int mov_write_trailer(AVFormatContext *s)
             avio_wb64(pb, mov->mdat_size + 16);
         }
         avio_seek(pb, mov->reserved_moov_size > 0 ? mov->reserved_header_pos : moov_pos, SEEK_SET);
+
+        gimi_write_meta_box_top_level(pb, mov, s);
 
         if (mov->flags & FF_MOV_FLAG_FASTSTART) {
             av_log(s, AV_LOG_INFO, "Starting second pass: moving the moov atom to the beginning of the file\n");
