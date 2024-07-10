@@ -23,3 +23,15 @@
 /vaapi_encode
 /vaapi_transcode
 /qsv_transcode
+/avio_read_callback
+/decode_filter_audio
+/decode_filter_video
+/demux_decode
+/mux
+/remux
+/resample_audio
+/scale_video
+/show_metadata
+/transcode
+in/
+out/

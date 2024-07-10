@@ -372,6 +372,7 @@ OBJS-$(CONFIG_MOFLEX_DEMUXER)            += moflex.o
 OBJS-$(CONFIG_MOV_DEMUXER)               += mov.o mov_chan.o mov_esds.o \
                                             qtpalette.o replaygain.o dovi_isom.o
 OBJS-$(CONFIG_MOV_MUXER)                 += movenc.o \
+                                            gimi.o \
                                             movenchint.o mov_chan.o rtp.o \
                                             movenccenc.o movenc_ttml.o rawutils.o \
                                             dovi_isom.o evc.o

@@ -72,6 +72,7 @@
 #include "version.h"
 #include "vpcc.h"
 #include "vvc.h"
+#include "gimi.h"
 
 static const AVOption options[] = {
     { "brand",    "Override major brand", offsetof(MOVMuxContext, major_brand),   AV_OPT_TYPE_STRING, {.str = NULL}, .flags = AV_OPT_FLAG_ENCODING_PARAM },
@@ -2635,6 +2636,12 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
         if (mov->nb_streams > 0 && track == &mov->tracks[1])
             mov_write_aux_tag(pb, "auxi");
     }
+
+    mov_write_taic_tag(pb, track);
+
+    mov_write_saiz_box(pb, mov, s);
+
+    mov_write_saio_box(pb, mov, s);
 
     return update_size(pb, pos);
 }
@@ -8076,6 +8083,8 @@ static int mov_write_trailer(AVFormatContext *s)
     int res = 0;
     int i;
     int64_t moov_pos;
+
+    mov_write_tai_timestamps(pb, mov, s);
 
     if (mov->need_rewrite_extradata) {
         for (i = 0; i < mov->nb_streams; i++) {
