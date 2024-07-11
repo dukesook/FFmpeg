@@ -2637,11 +2637,11 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
             mov_write_aux_tag(pb, "auxi");
     }
 
-    mov_write_taic_tag(pb, track);
+    gimi_write_taic_tag(pb, track);
 
-    mov_write_saiz_box(pb, mov, s);
+    gimi_write_saiz_box(pb, mov, s);
 
-    mov_write_saio_box(pb, mov, s);
+    gimi_write_saio_box(pb, mov, s);
 
     return update_size(pb, pos);
 }
@@ -3940,6 +3940,11 @@ static int mov_write_trak_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
     int chunk_backup = track->chunkCount;
     int ret;
 
+    // Temporary - Ignore audio tracks
+    if (track->par->codec_type == AVMEDIA_TYPE_AUDIO)
+        return 0;
+    // Temporary - Ignore audio tracks
+
     /* If we want to have an empty moov, but some samples already have been
      * buffered (delay_moov), pretend that no samples have been written yet. */
     if (mov->flags & FF_MOV_FLAG_EMPTY_MOOV)
@@ -3950,6 +3955,8 @@ static int mov_write_trak_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
     mov_write_tkhd_tag(pb, mov, track, st);
 
     av_assert2(mov->use_editlist >= 0);
+
+    gimi_write_meta_box_in_track(pb, mov, s);
 
     if (track->start_dts != AV_NOPTS_VALUE) {
         if (mov->use_editlist)
@@ -8084,7 +8091,7 @@ static int mov_write_trailer(AVFormatContext *s)
     int i;
     int64_t moov_pos;
 
-    mov_write_tai_timestamps(pb, mov, s);
+    gimi_write_tai_timestamps(pb, mov, s);
 
     if (mov->need_rewrite_extradata) {
         for (i = 0; i < mov->nb_streams; i++) {
