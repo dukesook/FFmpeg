@@ -109,7 +109,7 @@ uint8_t* gimi_generate_uuid(void); // 16 bytes (128 bits)
 void gimi_free_uuid(uint8_t *uuid);
 
 // TAI Timestamps
-int gimi_write_timestamps_in_mdat(AVIOContext* pb, MOVMuxContext* mov, AVFormatContext* s);
+int gimi_write_timestamps_in_mdat(AVIOContext* pb, MOVMuxContext* mov, int64_t nb_frames);
 int gimi_write_tai_timestamp_packet(AVIOContext* pb, TAITimestampPacket* timestamp);
 int gimi_write_taic_tag(AVIOContext* pb, MOVTrack* track);
 TAITimestampPacket* gimi_fabricate_tai_timestamps(uint32_t timestamp_count);

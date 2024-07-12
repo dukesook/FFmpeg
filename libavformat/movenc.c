@@ -8100,8 +8100,11 @@ static int mov_write_trailer(AVFormatContext *s)
     int res = 0;
     int i;
     int64_t moov_pos;
+    int64_t nb_frames = s->streams[0]->nb_frames;
 
-    gimi_write_timestamps_in_mdat(pb, mov, s);
+    gimi_write_timestamps_in_mdat(pb, mov, nb_frames);
+
+    // gimi_write_track_samples_content_ids_in_mdat();
 
     if (mov->need_rewrite_extradata) {
         for (i = 0; i < mov->nb_streams; i++) {

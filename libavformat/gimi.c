@@ -54,21 +54,19 @@ void gimi_free_uuid(uint8_t *uuid) {
 
 
 // TAI Timestamps
-int gimi_write_timestamps_in_mdat(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+int gimi_write_timestamps_in_mdat(AVIOContext *pb, MOVMuxContext *mov, int64_t nb_frames) {
   // Variables
-  AVStream* stream = s->streams[0];
-  int64_t frames = stream->nb_frames;
   TAITimestampPacket* timestamps;
   uint64_t pos = avio_tell(pb);
   int timestamp_packet_size;
 
 
   // Allocate Timestamp Offsets
-  mov->timestamp_offsets = (uint32_t*) malloc(frames * TAITimestampPacketSize);
+  mov->timestamp_offsets = (uint32_t*) malloc(nb_frames * TAITimestampPacketSize);
 
   // Write Timestamps in mdat
-  timestamps = gimi_fabricate_tai_timestamps(frames);
-  for (int i = 0; i < frames; i++) {
+  timestamps = gimi_fabricate_tai_timestamps(nb_frames);
+  for (int i = 0; i < nb_frames; i++) {
     pos = avio_tell(pb);
     mov->timestamp_offsets[i] = pos; // Save Timestamp Position (for saio box)
     timestamp_packet_size = gimi_write_tai_timestamp_packet(pb, &timestamps[i]);
