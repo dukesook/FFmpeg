@@ -98,7 +98,7 @@ typedef struct Box_saio {
   const char* aux_info_type;
   uint32_t aux_info_type_parameter;
   uint32_t entry_count;
-  uint64_t* offsets;
+  uint32_t* offsets;
 } Box_saio;
 
 // Branding
@@ -110,14 +110,14 @@ void gimi_free_uuid(uint8_t *uuid);
 
 // TAI Timestamps
 int gimi_write_timestamps_in_mdat(AVIOContext* pb, MOVMuxContext* mov, AVFormatContext* s);
-int gimi_write_tai_timestamp_packet(AVIOContext* pb, TAITimestampPacket* timestamp, MOVMuxContext* mov, size_t frame_number);
+int gimi_write_tai_timestamp_packet(AVIOContext* pb, TAITimestampPacket* timestamp);
 int gimi_write_taic_tag(AVIOContext* pb, MOVTrack* track);
 int gimi_write_itai_tag(AVIOContext* pb, MOVTrack* track);
 TAITimestampPacket* gimi_fabricate_tai_timestamps(uint32_t timestamp_count);
 void gimi_free_tai_timestamps(TAITimestampPacket* timestamps);
 
 // Sample Auxiliary
-int gimi_write_per_sample_timestamps(AVIOContext* pb, TAITimestampPacket* timestamps, uint64_t timestamp_count);
+int gimi_write_per_sample_timestamps(AVIOContext* pb, TAITimestampPacket* timestamps, uint32_t* offsets, uint64_t timestamp_count);
 int gimi_write_saiz_box(AVIOContext* pb, Box_saiz* saiz);
 int gimi_write_saio_box(AVIOContext* pb, Box_saio* saio);
 

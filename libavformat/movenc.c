@@ -2643,7 +2643,7 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
 
     // Write Timestamps
     timestamps = gimi_fabricate_tai_timestamps(nb_frames);
-    gimi_write_per_sample_timestamps(pb, timestamps, nb_frames);
+    gimi_write_per_sample_timestamps(pb, timestamps, mov->timestamp_offsets, nb_frames);
     gimi_free_tai_timestamps(timestamps);
 
     // Write Content Ids

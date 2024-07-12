@@ -5,7 +5,7 @@
 // Constants
 const uint8_t EXTENDED_TYPE_CONTENT_ID[16] = { 0x4a, 0x66, 0xef, 0xa7, 0xe5, 0x41, 0x52, 0x6c, 0x94, 0x27, 0x9e, 0x77, 0x61, 0x7f, 0xeb, 0x7d};
 const size_t CONTENT_ID_SIZE = 16;
-const size_t TAITimestampPacketSize = 9;
+const size_t TAITimestampPacketSize = 9; // 8 byte timestamp + 1 byte flags
 #define UUID_SIZE (16)
 #define URI_TYPE_CONTENT_ID "urn:uuid:25d7f5a6-7a80-5c0f-b9fb-30f64edf2712";
 
@@ -58,36 +58,41 @@ int gimi_write_timestamps_in_mdat(AVIOContext *pb, MOVMuxContext *mov, AVFormatC
   // Variables
   AVStream* stream = s->streams[0];
   int64_t frames = stream->nb_frames;
-  TAITimestampPacket timestamp;
-  int size;
-  {
-    // TODO - initialize the timestamp packet
-  }
+  TAITimestampPacket* timestamps;
+  uint64_t pos = avio_tell(pb);
+  int timestamp_packet_size;
+
 
   // Allocate Timestamp Offsets
   mov->timestamp_offsets = (uint32_t*) malloc(frames * TAITimestampPacketSize);
 
-
   // Write Timestamps in mdat
+  timestamps = gimi_fabricate_tai_timestamps(frames);
   for (int i = 0; i < frames; i++) {
-    size = gimi_write_tai_timestamp_packet(pb, &timestamp, mov, i);
-    mov->mdat_size += size;
+    pos = avio_tell(pb);
+    mov->timestamp_offsets[i] = pos; // Save Timestamp Position (for saio box)
+    timestamp_packet_size = gimi_write_tai_timestamp_packet(pb, &timestamps[i]);
+    mov->mdat_size += timestamp_packet_size;
   }
+  gimi_free_tai_timestamps(timestamps);
 
   return 0;
 }
 
-int gimi_write_tai_timestamp_packet(AVIOContext *pb, TAITimestampPacket* timestampPacket, MOVMuxContext *mov, size_t frame_number) {
+int gimi_write_tai_timestamp_packet(AVIOContext *pb, TAITimestampPacket* timestampPacket) {
   // Variables
-  uint64_t pos = avio_tell(pb);
   uint64_t timestamp = timestampPacket->tai_seconds;
-  uint8_t flags = 0;
-
-//
-  mov->timestamp_offsets[frame_number] = pos; // Save Timestamp Position (for saio box)
+  uint8_t synchronization_state = timestampPacket->synchronization_state;
+  uint8_t timestamp_generation_failure = timestampPacket->timestamp_generation_failure;
+  uint8_t timestamp_is_modified = timestampPacket->timestamp_is_modified;
+  uint8_t status_bits = 0;
+  
   avio_wb64(pb, timestamp);
 
-  avio_w8(pb, flags);
+  status_bits |= (synchronization_state & 0x01) << 7;
+  status_bits |= (timestamp_generation_failure & 0x01) << 6; 
+  status_bits |= (timestamp_is_modified & 0x01) << 5; 
+  avio_w8(pb, status_bits);
 
   return TAITimestampPacketSize;
 }
@@ -156,10 +161,10 @@ int gimi_write_itai_tag(AVIOContext *pb, MOVTrack *track) {
 
 TAITimestampPacket* gimi_fabricate_tai_timestamps(uint32_t timestamp_count) {
   TAITimestampPacket* timestamps = (TAITimestampPacket*)malloc(timestamp_count * sizeof(TAITimestampPacket));
-  uint64_t base_timestamp = 0x2000000000000000;
+  uint64_t base_timestamp = 0x7777777777777777;
 
   for (uint32_t i = 0; i < timestamp_count; i++) {
-    timestamps[i].tai_seconds = base_timestamp + (i * 64);
+    timestamps[i].tai_seconds = base_timestamp + (i);
     timestamps[i].synchronization_state = 0;
     timestamps[i].timestamp_generation_failure = 1;
     timestamps[i].timestamp_is_modified = 1;
@@ -174,7 +179,7 @@ void gimi_free_tai_timestamps(TAITimestampPacket* timestamps) {
 
 
 // Sample Auxiliary
-int gimi_write_per_sample_timestamps(AVIOContext* pb, TAITimestampPacket* timestamps, uint64_t timestamp_count) {
+int gimi_write_per_sample_timestamps(AVIOContext* pb, TAITimestampPacket* timestamps, uint32_t* offsets, uint64_t timestamp_count) {
   Box_saiz saiz;
   Box_saio saio;
 
@@ -191,8 +196,8 @@ int gimi_write_per_sample_timestamps(AVIOContext* pb, TAITimestampPacket* timest
     saio.aux_info_type = "atai";
     saio.aux_info_type_parameter = 0x0;
     saio.entry_count = timestamp_count;
-    saio.offsets = (uint64_t*)malloc(timestamp_count * sizeof(uint64_t));
-    // saio.offsets = // TODO: Get the offsets from: uint32_t offset = mov->timestamp_offsets[i];
+    // saio.offsets = (uint64_t*)malloc(timestamp_count * sizeof(uint64_t));
+    saio.offsets = offsets;
   }
   gimi_write_saio_box(pb, &saio);
 
