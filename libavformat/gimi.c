@@ -1,11 +1,24 @@
 #include "gimi.h"
+#include "gimi_ism_xml.h"
 #include <time.h>
+
+// Constants
+const uint8_t EXTENDED_TYPE_CONTENT_ID[16] = { 0x4a, 0x66, 0xef, 0xa7, 0xe5, 0x41, 0x52, 0x6c, 0x94, 0x27, 0x9e, 0x77, 0x61, 0x7f, 0xeb, 0x7d};
+const size_t CONTENT_ID_SIZE = 16;
+const size_t TAITimestampPacketSize = 5;
+#define UUID_SIZE (16)
+#define URI_TYPE_CONTENT_ID "urn:uuid:25d7f5a6-7a80-5c0f-b9fb-30f64edf2712";
+
 
 // Function Prototypes
 int64_t update_size(AVIOContext *pb, int64_t pos);
 
 
 // Branding
+int gimi_write_brands(AVIOContext *pb) {
+  ffio_wfourcc(pb, "geo1");
+  ffio_wfourcc(pb, "unif");
+}
 
 
 // Content ID
@@ -37,9 +50,6 @@ uint8_t* gimi_generate_uuid() {
 void gimi_free_uuid(uint8_t *uuid) {
     free(uuid);
 }
-
-
-// ISM
 
 
 // Timestamp
@@ -228,21 +238,96 @@ void gimi_write_fullbox(AVIOContext * pb, uint8_t version, uint32_t flags) {
 
 
 // Meta Boxes
+int gimi_write_meta_box_in_moov(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+  // Variables
+  #define ITEM_COUNT 1
+  #define PROPERTY_COUNT 1
+  #define ASSOCIATION_COUNT 1
+  int size = 0;
+  int64_t pos = avio_tell(pb);
+  struct infe items[ITEM_COUNT];
+  struct Box properties[PROPERTY_COUNT];
+  struct Association associations[ASSOCIATION_COUNT];
+
+  // 'Randomly' Generated Content ID
+  uint32_t content_id[4] = {0xFFFFFFFF, 0x00000000, 0xFFFFFFFF, 0x00000000};
+  uint8_t* payload = (uint8_t*)malloc(CONTENT_ID_SIZE);
+
+
+  avio_wb32(pb, 0); /* size */
+  ffio_wfourcc(pb, "meta");
+  gimi_write_fullbox(pb, 0, 0);
+
+  gimi_write_hdlr_box(pb, mov, s);
+
+  //Create Items
+  {
+    items[0].id = 1;
+    items[0].item_type = "mime";
+    items[0].name = "ODNI ISM XML Security Marking";
+    items[0].content_type = "application/dni-arh+xml";
+    items[0].uri_type = NULL;
+    items[0].value = ism_xml;
+    items[0].size = strlen(items[0].value) + 1;
+    items[0].construction_method = 1; //store in idat
+  }
+
+  // Create Properties
+  memcpy(payload, &content_id, CONTENT_ID_SIZE);
+  {
+    properties[0].fourcc = "uuid";
+    memcpy(properties[0].extended_type, EXTENDED_TYPE_CONTENT_ID, 16);
+    properties[0].payload = payload;
+    properties[0].payload_size = CONTENT_ID_SIZE;
+  }
+
+  // Create Item<->Property Associations
+  {
+    associations[0].item_id = 1;
+    associations[0].property_count = 1;
+    associations[0].property_ids = (uint16_t*)malloc(sizeof(uint16_t));
+    associations[0].property_ids[0] = 1;
+  }
+
+
+    gimi_write_idat(pb, items, ITEM_COUNT);
+
+    gimi_write_iinf_box(pb, items, ITEM_COUNT);
+
+    gimi_write_iprp_box(pb, properties, PROPERTY_COUNT, associations, ASSOCIATION_COUNT);
+
+    // gimi_write_iref_box(pb, mov, s);
+
+    gimi_write_iloc_box(pb, items, ITEM_COUNT);
+
+    size = update_size(pb, pos);
+    return size;
+}
+
 int gimi_write_meta_box_in_track(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
-    // Holds Content IDs
+  // Holds Content IDs
 
-    // Variables
-    int size = 0;
-    int64_t pos = avio_tell(pb);
-    #define ITEM_COUNT 1
-    struct infe items[ITEM_COUNT];
+  // Variables
+  int size = 0;
+  int64_t pos = avio_tell(pb);
+  #define ITEM_COUNT 1
+  #define PROPERTY_COUNT 1
+  #define ASSOCIATION_COUNT 1
+  struct Box properties[PROPERTY_COUNT];
+  struct infe items[ITEM_COUNT];
+  struct Association associations[ASSOCIATION_COUNT];
+  uint64_t content_id[] = {0xBBBBBBBBBBBBBBBB, 0xCCCCCCCCCCCCCCCC};
+  uint8_t* payload = (uint8_t*)malloc(CONTENT_ID_SIZE);
 
-    avio_wb32(pb, 0); /* size */
-    ffio_wfourcc(pb, "meta");
-    gimi_write_fullbox(pb, 0, 0);
 
-    gimi_write_hdlr_box(pb, mov, s);
+  avio_wb32(pb, 0); /* size */
+  ffio_wfourcc(pb, "meta");
+  gimi_write_fullbox(pb, 0, 0);
 
+  gimi_write_hdlr_box(pb, mov, s);
+
+  //Create Items
+  {
     items[0].id = 1;
     items[0].item_type = "uri ";
     items[0].name = "Content ID for Parent Track";
@@ -252,20 +337,36 @@ int gimi_write_meta_box_in_track(AVIOContext *pb, MOVMuxContext *mov, AVFormatCo
     items[0].size = UUID_SIZE;
     // items[0].size = strlen(items[0].value) + 1;
     items[0].construction_method = 1; //Store in the value of the content id in the idat as opposed to mdat
+  }
+  
+  // Create Properties
+  memcpy(payload, &content_id, CONTENT_ID_SIZE);
+  {
+    properties[0].fourcc = "uuid";
+    memcpy(properties[0].extended_type, EXTENDED_TYPE_CONTENT_ID, 16);
+    properties[0].payload = payload;
+    properties[0].payload_size = CONTENT_ID_SIZE;
+  }
 
-    gimi_write_idat(pb, items, ITEM_COUNT);
+  // Create Item<->Property Associations
+  {
+    associations[0].item_id = 1;
+    associations[0].property_count = 1;
+    associations[0].property_ids = (uint16_t*)malloc(sizeof(uint16_t));
+    associations[0].property_ids[0] = 1;
+  }
 
-    gimi_write_iinf_box(pb, items, ITEM_COUNT);
+  gimi_write_idat(pb, items, ITEM_COUNT);
 
-    gimi_write_iloc_box(pb, items, ITEM_COUNT);
+  gimi_write_iinf_box(pb, items, ITEM_COUNT);
 
-    size = update_size(pb, pos);
-    return size;
-}
+  gimi_write_iprp_box(pb, properties, PROPERTY_COUNT, associations, ASSOCIATION_COUNT);
 
-int gimi_write_meta_box_in_moov(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
-  // Holds ISM Security Data
-  return 0;
+
+  gimi_write_iloc_box(pb, items, ITEM_COUNT);
+
+  size = update_size(pb, pos);
+  return size;
 }
 
 int gimi_write_hdlr_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
@@ -389,4 +490,96 @@ int gimi_write_iloc_box(AVIOContext *pb, infe* items, uint32_t item_count) {
 
     return update_size(pb, pos);  
 }
+
+int gimi_write_iprp_box(AVIOContext *pb, struct Box* properties, size_t property_count, Association* associations, size_t association_count) {
+  // Variables
+  int size = 0;
+  int64_t pos = avio_tell(pb);
+
+  avio_wb32(pb, 0); /* size */
+  ffio_wfourcc(pb, "iprp");
+
+  gimi_write_ipco_box(pb, properties, property_count);
+
+  gimi_write_ipma_box(pb, associations, association_count);
+
+  size = update_size(pb, pos);
+  return size;
+}
+
+int gimi_write_ipco_box(AVIOContext *pb, struct Box* properties, size_t property_count) {
+  // Variables
+  int size = 0;
+  int64_t pos = avio_tell(pb);
+
+  avio_wb32(pb, 0); /* size */
+  ffio_wfourcc(pb, "ipco");
+
+  for (uint32_t i = 0; i < property_count; i++) {
+    gimi_write_box(pb, properties[i]);
+  }
+
+  size = update_size(pb, pos);
+  return size;
+}
+
+int gimi_write_ipma_box(AVIOContext *pb, Association* associations, size_t association_count) {
+  // Variables
+  int size = 0;
+  int64_t pos = avio_tell(pb);
+  uint8_t version = 1;
+  uint32_t flags = 0;
+
+  avio_wb32(pb, 0); /* size */
+  ffio_wfourcc(pb, "ipma");
+
+  gimi_write_fullbox(pb, version, flags);
+
+  avio_wb32(pb, association_count); // entry_count
+
+  for (uint32_t i = 0; i < association_count; i++) {
+    Association ass = associations[i];
+    if (version < 1) {
+      avio_wb16(pb, ass.item_id);
+    } else {
+      avio_wb32(pb, ass.item_id);
+    }
+    avio_w8(pb, ass.property_count);
+    for (int j = 0; j < ass.property_count; j++) {
+      if (flags & 1) {
+        uint16_t property_id = ass.property_ids[j];
+        // TODO: the msb indicates 'essential'
+        avio_wb16(pb, property_id);
+      } else {
+        // TODO: the msb indicates 'essential'
+        uint8_t property_id = (uint8_t) ass.property_ids[j];
+        avio_w8(pb, property_id);
+      }
+    }
+  }
+
+  size = update_size(pb, pos);
+  return size;
+}
+
+int gimi_write_box(AVIOContext *pb, struct Box box) {
+  // Variables
+  int size = 0;
+  int64_t pos = avio_tell(pb);
+
+  // uint32_t box_size = 8 + box.payload_size;
+
+  avio_wb32(pb, 0); /* size */
+  ffio_wfourcc(pb, box.fourcc);
+
+  if (!strcmp(box.fourcc, "uuid")) {
+    avio_write(pb, box.extended_type, 16);
+  }
+
+  avio_write(pb, box.payload, box.payload_size);
+
+  size = update_size(pb, pos);
+  return size;
+}
+
 

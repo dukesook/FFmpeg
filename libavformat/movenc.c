@@ -5719,6 +5719,11 @@ static int mov_write_ftyp_tag(AVIOContext *pb, AVFormatContext *s)
     if (has_id3)
         ffio_wfourcc(pb, "aid3");
 
+    // TODO: Don't Hard Code to always execute
+    if (1) {
+        gimi_write_brands(pb);
+    }
+
     return update_size(pb, pos);
 }
 
@@ -8176,6 +8181,8 @@ static int mov_write_trailer(AVFormatContext *s)
             avio_wb64(pb, mov->mdat_size + 16);
         }
         avio_seek(pb, mov->reserved_moov_size > 0 ? mov->reserved_header_pos : moov_pos, SEEK_SET);
+
+        gimi_write_meta_box_in_moov(pb, mov, s);
 
         if (mov->flags & FF_MOV_FLAG_FASTSTART) {
             av_log(s, AV_LOG_INFO, "Starting second pass: moving the moov atom to the beginning of the file\n");
