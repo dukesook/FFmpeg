@@ -190,12 +190,6 @@ typedef enum {
     MOV_PRFT_NB
 } MOVPrftBox;
 
-typedef struct TAITimestampPacket {
-    uint64_t tai_timestamp;
-    uint8_t synchronization_state;
-    uint8_t timestamp_generation_failure;
-    uint8_t timestamp_is_modified;
-} TAITimestampPacket;
 
 typedef struct MOVMuxContext {
     const AVClass *av_class;
@@ -267,8 +261,7 @@ typedef struct MOVMuxContext {
 
     uint32_t saiz_sample_count;
     uint32_t saio_entry_count;
-    uint32_t* timestamp_offsets; // There will be one timestamp_offset for each frame
-    TAITimestampPacket* timestamps;
+    uint32_t* timestamp_offsets; // See nb_frames for the number of entries
 } MOVMuxContext;
 
 #define FF_MOV_FLAG_RTP_HINT              (1 <<  0)

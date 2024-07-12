@@ -5,7 +5,7 @@
 // Constants
 const uint8_t EXTENDED_TYPE_CONTENT_ID[16] = { 0x4a, 0x66, 0xef, 0xa7, 0xe5, 0x41, 0x52, 0x6c, 0x94, 0x27, 0x9e, 0x77, 0x61, 0x7f, 0xeb, 0x7d};
 const size_t CONTENT_ID_SIZE = 16;
-const size_t TAITimestampPacketSize = 5;
+const size_t TAITimestampPacketSize = 9;
 #define UUID_SIZE (16)
 #define URI_TYPE_CONTENT_ID "urn:uuid:25d7f5a6-7a80-5c0f-b9fb-30f64edf2712";
 
@@ -18,6 +18,7 @@ int64_t update_size(AVIOContext *pb, int64_t pos);
 int gimi_write_brands(AVIOContext *pb) {
   ffio_wfourcc(pb, "geo1");
   ffio_wfourcc(pb, "unif");
+  return 8;
 }
 
 
@@ -52,41 +53,43 @@ void gimi_free_uuid(uint8_t *uuid) {
 }
 
 
-// Timestamp
-int gimi_write_tai_timestamp_packet(AVIOContext *pb, MOVMuxContext *mov, int frame_number) {
-    // Variables
-    uint64_t pos;
-    uint64_t timestamp = frame_number; // TODO: get the timestamp, don't just use the frame number
-    uint8_t flags = 0xAA;  // TODO: use the appropriate flags
+// TAI Timestamps
+int gimi_write_timestamps_in_mdat(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+  // Variables
+  AVStream* stream = s->streams[0];
+  int64_t frames = stream->nb_frames;
+  TAITimestampPacket timestamp;
+  int size;
+  {
+    // TODO - initialize the timestamp packet
+  }
 
-    pos = avio_tell(pb);
+  // Allocate Timestamp Offsets
+  mov->timestamp_offsets = (uint32_t*) malloc(frames * TAITimestampPacketSize);
 
-    // Save Timestamp Position (for saio box)
-    mov->timestamp_offsets[frame_number] = pos;
-    avio_wb64(pb, timestamp);
-    mov->mdat_size += sizeof(timestamp);
 
-    avio_w8(pb, flags);
-    mov->mdat_size += sizeof(flags);
+  // Write Timestamps in mdat
+  for (int i = 0; i < frames; i++) {
+    size = gimi_write_tai_timestamp_packet(pb, &timestamp, mov, i);
+    mov->mdat_size += size;
+  }
 
-    return TAITimestampPacketSize;
-
+  return 0;
 }
 
-int gimi_write_tai_timestamps(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
-    // Variables
-    AVStream* stream = s->streams[0];
-    int64_t frames = stream->nb_frames;
+int gimi_write_tai_timestamp_packet(AVIOContext *pb, TAITimestampPacket* timestampPacket, MOVMuxContext *mov, size_t frame_number) {
+  // Variables
+  uint64_t pos = avio_tell(pb);
+  uint64_t timestamp = timestampPacket->tai_seconds;
+  uint8_t flags = 0;
 
-    // Allocate Timestamp Offsets
-    mov->timestamp_offsets = (uint32_t*) malloc(frames * TAITimestampPacketSize);
+//
+  mov->timestamp_offsets[frame_number] = pos; // Save Timestamp Position (for saio box)
+  avio_wb64(pb, timestamp);
 
-    // Write Timestamps in mdat
-    for (int i = 0; i < frames; i++) {
-        gimi_write_tai_timestamp_packet(pb, mov, i);
-    }
+  avio_w8(pb, flags);
 
-    return 0;
+  return TAITimestampPacketSize;
 }
 
 int gimi_write_taic_tag(AVIOContext *pb, MOVTrack *track) {
@@ -151,44 +154,84 @@ int gimi_write_itai_tag(AVIOContext *pb, MOVTrack *track) {
     return update_size(pb, pos);
 }
 
+TAITimestampPacket* gimi_fabricate_tai_timestamps(uint32_t timestamp_count) {
+  TAITimestampPacket* timestamps = (TAITimestampPacket*)malloc(timestamp_count * sizeof(TAITimestampPacket));
+  uint64_t base_timestamp = 0x2000000000000000;
+
+  for (uint32_t i = 0; i < timestamp_count; i++) {
+    timestamps[i].tai_seconds = base_timestamp + (i * 64);
+    timestamps[i].synchronization_state = 0;
+    timestamps[i].timestamp_generation_failure = 1;
+    timestamps[i].timestamp_is_modified = 1;
+  }
+
+  return timestamps;
+}
+
+void gimi_free_tai_timestamps(TAITimestampPacket* timestamps) {
+  free(timestamps);
+}
+
 
 // Sample Auxiliary
-int gimi_write_saiz_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+int gimi_write_per_sample_timestamps(AVIOContext* pb, TAITimestampPacket* timestamps, uint64_t timestamp_count) {
+  Box_saiz saiz;
+  Box_saio saio;
+
+  {
+    saiz.aux_info_type = "atai";
+    saiz.aux_info_type_parameter = 0x0;
+    saiz.default_sample_info_size = 5; // 4 byte timestamp + 1 byte flags
+    saiz.sample_count = timestamp_count;
+    saiz.sample_info_sizes = NULL;
+  }
+  gimi_write_saiz_box(pb, &saiz);
+
+  {
+    saio.aux_info_type = "atai";
+    saio.aux_info_type_parameter = 0x0;
+    saio.entry_count = timestamp_count;
+    saio.offsets = (uint64_t*)malloc(timestamp_count * sizeof(uint64_t));
+    // saio.offsets = // TODO: Get the offsets from: uint32_t offset = mov->timestamp_offsets[i];
+  }
+  gimi_write_saio_box(pb, &saio);
+
+  return 0;
+}
+
+int gimi_write_saiz_box(AVIOContext *pb, Box_saiz *saiz) {
     // Variables
     int64_t pos = avio_tell(pb);
     uint8_t version = 0;
     uint32_t flags = 1;
-    uint32_t sample_count = (uint32_t) s->streams[0]->nb_frames;
-    uint8_t default_sample_info_size = 5; // 4 byte timestamp + 1 byte flags
 
     avio_wb32(pb, 0); /* size update later */
     ffio_wfourcc(pb, "saiz");
     gimi_write_fullbox(pb, version, flags);
 
     if (flags == 1) {
-        ffio_wfourcc(pb, "stai"); // unsigned int(32) aux_info_type
+        ffio_wfourcc(pb, saiz->aux_info_type);
         avio_wb32(pb, 0x0); // unsigned int(32) aux_info_type_parameter - 8-bit integer identifying a specific stream of sample auxiliary information.
     }
 
-    // uint8_t default_sample_info_size = mov->timestamp_size;
-    avio_w8(pb, default_sample_info_size);
+    avio_w8(pb, saiz->default_sample_info_size);
 
-    avio_wb32(pb, sample_count);
+    avio_wb32(pb, saiz->sample_count);
 
-    if (default_sample_info_size == 0) {
-        // unsigned int (8) sample_info_size[ sample_count ];
+    if (saiz->default_sample_info_size == 0) {
+      // TODO
+      // unsigned int (8) sample_info_size[ sample_count ];
     }
 
     return update_size(pb, pos);  
 }
 
-int gimi_write_saio_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+int gimi_write_saio_box(AVIOContext *pb, Box_saio *saio) {
 
   // Variables
   int64_t pos = avio_tell(pb);
   uint8_t version = 0;
   uint32_t flags = 1;
-  uint32_t entry_count = (uint32_t) s->streams[0]->nb_frames;
 
   //Full Box
   avio_wb32(pb, 0); /* size update later */
@@ -200,12 +243,12 @@ int gimi_write_saio_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s)
       avio_wb32(pb, 0x0);// unsigned int(32) aux_info_type_parameter
   }
 
-  avio_wb32(pb, entry_count);
+  avio_wb32(pb, saio->entry_count);
 
   if (version == 0) {
-      for (int i = 0; i < entry_count; i++) {
-          uint32_t offset = mov->timestamp_offsets[i];
-          // uint32_t offset = i;
+      for (int i = 0; i < saio->entry_count; i++) {
+          // uint32_t offset = mov->timestamp_offsets[i];
+          uint32_t offset = saio->offsets[i];
           avio_wb32(pb, offset);
       }
   }
@@ -230,6 +273,7 @@ int64_t update_size(AVIOContext *pb, int64_t pos) {
 
     return curpos - pos;
 }
+
 void gimi_write_fullbox(AVIOContext * pb, uint8_t version, uint32_t flags) {
     // A full box has an 8-bit version and 24-bit flag. 
     uint32_t flags_and_version = (version << 24) | flags;

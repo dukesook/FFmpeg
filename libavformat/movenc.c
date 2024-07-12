@@ -2435,6 +2435,8 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
     int64_t pos = avio_tell(pb);
     char compressor_name[32] = { 0 };
     int avid = 0;
+    uint64_t nb_frames = (uint64_t) s->streams[0]->nb_frames;
+    TAITimestampPacket* timestamps = NULL;
 
     int uncompressed_ycbcr = ((track->par->codec_id == AV_CODEC_ID_RAWVIDEO && track->par->format == AV_PIX_FMT_UYVY422)
                            || (track->par->codec_id == AV_CODEC_ID_RAWVIDEO && track->par->format == AV_PIX_FMT_YUYV422)
@@ -2639,10 +2641,13 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
 
     gimi_write_taic_tag(pb, track);
 
-    gimi_write_saiz_box(pb, mov, s);
+    // Write Timestamps
+    timestamps = gimi_fabricate_tai_timestamps(nb_frames);
+    gimi_write_per_sample_timestamps(pb, timestamps, nb_frames);
+    gimi_free_tai_timestamps(timestamps);
 
-    gimi_write_saio_box(pb, mov, s);
-
+    // Write Content Ids
+    // TODO
     return update_size(pb, pos);
 }
 
@@ -8096,7 +8101,7 @@ static int mov_write_trailer(AVFormatContext *s)
     int i;
     int64_t moov_pos;
 
-    gimi_write_tai_timestamps(pb, mov, s);
+    gimi_write_timestamps_in_mdat(pb, mov, s);
 
     if (mov->need_rewrite_extradata) {
         for (i = 0; i < mov->nb_streams; i++) {

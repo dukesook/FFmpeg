@@ -78,6 +78,29 @@ typedef struct Association {
   // uint8_t* essential;  // TODO: the msb of the property_id is the 'essential' bit
 } Association;
 
+typedef struct TAITimestampPacket {
+  uint64_t tai_seconds;
+  uint8_t synchronization_state;
+  uint8_t timestamp_generation_failure;
+  uint8_t timestamp_is_modified;
+
+} TAITimestampPacket;
+
+typedef struct Box_saiz {
+  const char* aux_info_type;
+  uint32_t aux_info_type_parameter;
+  uint8_t default_sample_info_size;
+  uint32_t sample_count;
+  uint8_t* sample_info_sizes;
+} Box_saiz;
+
+typedef struct Box_saio {
+  const char* aux_info_type;
+  uint32_t aux_info_type_parameter;
+  uint32_t entry_count;
+  uint64_t* offsets;
+} Box_saio;
+
 // Branding
 int gimi_write_brands(AVIOContext* pb);
 
@@ -85,15 +108,18 @@ int gimi_write_brands(AVIOContext* pb);
 uint8_t* gimi_generate_uuid(void); // 16 bytes (128 bits)
 void gimi_free_uuid(uint8_t *uuid);
 
-// Tai Timestamps
-int gimi_write_tai_timestamp_packet(AVIOContext* pb, MOVMuxContext* mov, int frame_number);
-int gimi_write_tai_timestamps(AVIOContext* pb, MOVMuxContext* mov, AVFormatContext* s);
+// TAI Timestamps
+int gimi_write_timestamps_in_mdat(AVIOContext* pb, MOVMuxContext* mov, AVFormatContext* s);
+int gimi_write_tai_timestamp_packet(AVIOContext* pb, TAITimestampPacket* timestamp, MOVMuxContext* mov, size_t frame_number);
 int gimi_write_taic_tag(AVIOContext* pb, MOVTrack* track);
 int gimi_write_itai_tag(AVIOContext* pb, MOVTrack* track);
+TAITimestampPacket* gimi_fabricate_tai_timestamps(uint32_t timestamp_count);
+void gimi_free_tai_timestamps(TAITimestampPacket* timestamps);
 
 // Sample Auxiliary
-int gimi_write_saiz_box(AVIOContext* pb, MOVMuxContext* mov, AVFormatContext* s);
-int gimi_write_saio_box(AVIOContext* pb, MOVMuxContext* mov, AVFormatContext* s);
+int gimi_write_per_sample_timestamps(AVIOContext* pb, TAITimestampPacket* timestamps, uint64_t timestamp_count);
+int gimi_write_saiz_box(AVIOContext* pb, Box_saiz* saiz);
+int gimi_write_saio_box(AVIOContext* pb, Box_saio* saio);
 
 // Boxes
 // int64_t update_size(AVIOContext *pb, int64_t pos);
