@@ -132,33 +132,6 @@ int gimi_write_taic_tag(AVIOContext *pb, MOVTrack *track) {
     return update_size(pb, pos);
 }
 
-int gimi_write_itai_tag(AVIOContext *pb, MOVTrack *track) {
-    // Variables
-    int64_t pos = avio_tell(pb);
-    uint64_t tai_timestamp = 0x1122334455667788;
-    uint8_t synchronization_state = 0;
-    uint8_t timestamp_generation_failure = 1;
-    uint8_t timestamp_is_modified = 1;
-    uint8_t status_bits = 0;
-
-    avio_wb32(pb, 0); /* size */
-    ffio_wfourcc(pb, "itai");
-
-    // version(8) & flags(24)
-    avio_wb32(pb, 0);
-
-    avio_wb64(pb, tai_timestamp);
-
-
-
-    status_bits |= (synchronization_state & 0x01) << 7;
-    status_bits |= (timestamp_generation_failure & 0x01) << 6; 
-    status_bits |= (timestamp_is_modified & 0x01) << 5; 
-    avio_w8(pb, status_bits);
-
-    return update_size(pb, pos);
-}
-
 TAITimestampPacket* gimi_fabricate_tai_timestamps(uint32_t timestamp_count) {
   TAITimestampPacket* timestamps = (TAITimestampPacket*)malloc(timestamp_count * sizeof(TAITimestampPacket));
   uint64_t base_timestamp = 0x7777777777777777;
