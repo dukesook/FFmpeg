@@ -8,6 +8,7 @@ const size_t CONTENT_ID_SIZE = 16;
 const size_t TAITimestampPacketSize = 9; // 8 byte timestamp + 1 byte flags
 #define UUID_SIZE (16)
 #define URI_TYPE_CONTENT_ID "urn:uuid:25d7f5a6-7a80-5c0f-b9fb-30f64edf2712";
+#define DEBUG_FILENAME "out/output.txt"
 
 
 // Function Prototypes
@@ -24,6 +25,8 @@ int gimi_write_brands(AVIOContext *pb) {
 
 // Content ID
 int gimi_write_track_content_ids_in_mdat(AVIOContext* pb, MOVMuxContext* mov, int64_t nb_frames) {
+  
+  // Variables
   uint64_t pos;
   size_t size; // size of all content ids
   uint8_t* content_id;
@@ -44,8 +47,36 @@ int gimi_write_track_content_ids_in_mdat(AVIOContext* pb, MOVMuxContext* mov, in
   return size;
 }
 
+int gimi_write_per_sample_content_ids(AVIOContext* pb, uint32_t* offsets, uint64_t content_id_count) {
+  
+  // Variables
+  Box_saiz saiz;
+  Box_saio saio;
+
+  {
+    saiz.aux_info_type = "suid";
+    saiz.aux_info_type_parameter = 0x0;
+    saiz.default_sample_info_size = CONTENT_ID_SIZE;
+    saiz.sample_count = content_id_count;
+    saiz.sample_info_sizes = NULL;
+  }
+  gimi_write_saiz_box(pb, &saiz);
+
+  {
+    saio.aux_info_type = "suid";
+    saio.aux_info_type_parameter = 0x0;
+    saio.entry_count = content_id_count;
+    // saio.offsets = (uint64_t*)malloc(timestamp_count * sizeof(uint64_t));
+    saio.offsets = offsets;
+  }
+  gimi_write_saio_box(pb, &saio);
+
+  return 0;
+}
+
 uint8_t* gimi_generate_uuid() {
-  // Allocate memory for the UUID
+
+  // Variables
   uint8_t *uuid = (uint8_t *)malloc(16 * sizeof(uint8_t));
   if (uuid == NULL) {
       fprintf(stderr, "Memory allocation failed\n");
@@ -101,6 +132,33 @@ int gimi_write_timestamps_in_mdat(AVIOContext *pb, MOVMuxContext *mov, int64_t n
     mov->mdat_size += timestamp_packet_size;
   }
   gimi_free_tai_timestamps(timestamps);
+
+  return 0;
+}
+
+int gimi_write_per_sample_timestamps(AVIOContext* pb, uint32_t* offsets, uint64_t timestamp_count) {
+  Box_saiz saiz;
+  Box_saio saio;
+
+  {
+    saiz.aux_info_type = "atai";
+    saiz.aux_info_type_parameter = 0x0;
+    saiz.default_sample_info_size = 9; // 8 byte timestamp + 1 byte flags
+    saiz.sample_count = timestamp_count;
+    saiz.sample_info_sizes = NULL;
+  }
+  gimi_write_saiz_box(pb, &saiz);
+
+  {
+    saio.aux_info_type = "atai";
+    saio.aux_info_type_parameter = 0x0;
+    saio.entry_count = timestamp_count;
+    // saio.offsets = (uint64_t*)malloc(timestamp_count * sizeof(uint64_t));
+    saio.offsets = offsets;
+  }
+  gimi_write_saio_box(pb, &saio);
+
+  gimi_write_to_file();
 
   return 0;
 }
@@ -174,56 +232,6 @@ void gimi_free_tai_timestamps(TAITimestampPacket* timestamps) {
 
 
 // Sample Auxiliary
-int gimi_write_per_sample_timestamps(AVIOContext* pb, uint32_t* offsets, uint64_t timestamp_count) {
-  Box_saiz saiz;
-  Box_saio saio;
-
-  {
-    saiz.aux_info_type = "atai";
-    saiz.aux_info_type_parameter = 0x0;
-    saiz.default_sample_info_size = 9; // 8 byte timestamp + 1 byte flags
-    saiz.sample_count = timestamp_count;
-    saiz.sample_info_sizes = NULL;
-  }
-  gimi_write_saiz_box(pb, &saiz);
-
-  {
-    saio.aux_info_type = "atai";
-    saio.aux_info_type_parameter = 0x0;
-    saio.entry_count = timestamp_count;
-    // saio.offsets = (uint64_t*)malloc(timestamp_count * sizeof(uint64_t));
-    saio.offsets = offsets;
-  }
-  gimi_write_saio_box(pb, &saio);
-
-  return 0;
-}
-
-int gimi_write_per_sample_content_ids(AVIOContext* pb, uint32_t* offsets, uint64_t content_id_count) {
-  Box_saiz saiz;
-  Box_saio saio;
-
-  {
-    saiz.aux_info_type = "suid";
-    saiz.aux_info_type_parameter = 0x0;
-    saiz.default_sample_info_size = CONTENT_ID_SIZE;
-    saiz.sample_count = content_id_count;
-    saiz.sample_info_sizes = NULL;
-  }
-  gimi_write_saiz_box(pb, &saiz);
-
-  {
-    saio.aux_info_type = "suid";
-    saio.aux_info_type_parameter = 0x0;
-    saio.entry_count = content_id_count;
-    // saio.offsets = (uint64_t*)malloc(timestamp_count * sizeof(uint64_t));
-    saio.offsets = offsets;
-  }
-  gimi_write_saio_box(pb, &saio);
-
-  return 0;
-}
-
 int gimi_write_saiz_box(AVIOContext *pb, Box_saiz *saiz) {
     // Variables
     int64_t pos = avio_tell(pb);
@@ -628,3 +636,41 @@ int gimi_write_box(AVIOContext *pb, struct Box box) {
 }
 
 
+// Debug
+void gimi_write_to_file() {
+
+  const char *text = "Hello, World!";
+  FILE *file = fopen("out/output.txt", "w");
+  if (file == NULL) {
+      perror("Error opening file");
+      exit (1);
+  }
+
+  fprintf(file, "%s\n", text);
+
+  fclose(file);
+
+  gimi_log("1");
+  gimi_log("2");
+  gimi_log("3\n");
+  gimi_log("4");
+
+}
+
+void gimi_log(const char* message) {
+  FILE *file = fopen(DEBUG_FILENAME, "a");
+  if (file == NULL) {
+      perror("Error opening file");
+      exit (1);
+  }
+  fprintf(file, "%s", message);
+  fclose(file);
+}
+
+void gimi_clear_log() {
+  int error = remove(DEBUG_FILENAME);
+  if (error) {
+      perror("Error deleting file");
+      exit(1);
+  }
+}
