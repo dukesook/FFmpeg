@@ -262,6 +262,7 @@ typedef struct MOVMuxContext {
     uint32_t saiz_sample_count;
     uint32_t saio_entry_count;
     uint32_t* timestamp_offsets; // See nb_frames for the number of entries
+    uint32_t* content_id_offsets; // See nb_frames for the number of entries
 } MOVMuxContext;
 
 #define FF_MOV_FLAG_RTP_HINT              (1 <<  0)

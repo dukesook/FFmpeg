@@ -23,33 +23,61 @@ int gimi_write_brands(AVIOContext *pb) {
 
 
 // Content ID
+int gimi_write_track_content_ids_in_mdat(AVIOContext* pb, MOVMuxContext* mov, int64_t nb_frames) {
+  uint64_t pos;
+  size_t size; // size of all content ids
+  uint8_t* content_id;
+
+  // Allocate Content ID Offsets
+  mov->content_id_offsets = (uint32_t*) malloc(nb_frames * sizeof(uint32_t));
+
+  for (int i = 0; i < nb_frames; i++) {
+    pos = avio_tell(pb);
+    mov->content_id_offsets[i] = pos; // Save Content ID Position (for saio box)
+    content_id = gimi_generate_uuid();
+    avio_write(pb, content_id, CONTENT_ID_SIZE);
+    mov->mdat_size += CONTENT_ID_SIZE;
+    gimi_free_uuid(content_id);
+  }
+
+  size = nb_frames * CONTENT_ID_SIZE;
+  return size;
+}
+
 uint8_t* gimi_generate_uuid() {
-    // Allocate memory for the UUID
-    uint8_t *uuid = (uint8_t *)malloc(16 * sizeof(uint8_t));
-    if (uuid == NULL) {
-        fprintf(stderr, "Memory allocation failed\n");
-        exit(1);
-    }
+  // Allocate memory for the UUID
+  uint8_t *uuid = (uint8_t *)malloc(16 * sizeof(uint8_t));
+  if (uuid == NULL) {
+      fprintf(stderr, "Memory allocation failed\n");
+      exit(1);
+  }
 
-    // Seed the random number generator
-    srand((unsigned)time(NULL));
+  // Seed the random number generator
+  srand((unsigned)time(NULL));
 
-    // Generate 16 random bytes
-    for (int i = 0; i < 16; i++) {
-        uuid[i] = rand() % 256;
-    }
+  // Generate 16 random bytes
+  for (int i = 0; i < 16; i++) {
+      uuid[i] = rand() % 256;
+      // uuid[i] = 0xFF;
+  }
 
-    // Set the version to 4 -> 0100xxxx
-    uuid[6] = (uuid[6] & 0x0F) | 0x40;
+  // Set the version to 4 -> 0100xxxx
+  uuid[6] = (uuid[6] & 0x0F) | 0x40;
 
-    // Set the variant to RFC 4122 -> 10xxxxxx
-    uuid[8] = (uuid[8] & 0x3F) | 0x80;
+  // Set the variant to RFC 4122 -> 10xxxxxx
+  uuid[8] = (uuid[8] & 0x3F) | 0x80;
 
-    return uuid;
+  // Temporarily Hard-Code for debugging
+  for (int i = 0; i < 16; i++) {
+    uuid[i] = 0xCC;
+  }
+  // Temporarily Hard-Code for debugging
+
+  return uuid;
 }
 
 void gimi_free_uuid(uint8_t *uuid) {
-    free(uuid);
+    // free(uuid);
 }
 
 
@@ -57,7 +85,7 @@ void gimi_free_uuid(uint8_t *uuid) {
 int gimi_write_timestamps_in_mdat(AVIOContext *pb, MOVMuxContext *mov, int64_t nb_frames) {
   // Variables
   TAITimestampPacket* timestamps;
-  uint64_t pos = avio_tell(pb);
+  uint64_t pos;
   int timestamp_packet_size;
 
 
@@ -98,6 +126,8 @@ int gimi_write_tai_timestamp_packet(AVIOContext *pb, TAITimestampPacket* timesta
 int gimi_write_taic_tag(AVIOContext *pb, MOVTrack *track) {
     // Variables
     int64_t pos = avio_tell(pb);
+    uint8_t version = 0;
+    uint32_t flags = 0;
     uint64_t time_uncertainty = 0x1122334455667788;
     uint32_t clock_resolution = 0x100;
     int32_t clock_drift_rate = 0x200;
@@ -108,8 +138,7 @@ int gimi_write_taic_tag(AVIOContext *pb, MOVTrack *track) {
     avio_wb32(pb, 0); /* size */
     ffio_wfourcc(pb, "taic");
 
-    // version(8) & flags(24)
-    avio_wb32(pb, 0);
+    gimi_write_fullbox(pb, version, flags);
 
     avio_wb64(pb, time_uncertainty);
 
@@ -118,14 +147,9 @@ int gimi_write_taic_tag(AVIOContext *pb, MOVTrack *track) {
     avio_wb32(pb, clock_drift_rate);
 
 
-    avio_w8(pb, output);
     // unsigned int(2) clock_type; 
     // unsigned int(6) reserved = 0;
-
-
-    // avio_wb32(pb, bit_rates.buffer_size);
-    // avio_wb32(pb, bit_rates.max_bit_rate);
-    // avio_wb32(pb, bit_rates.avg_bit_rate);
+    avio_w8(pb, output);
 
     return update_size(pb, pos);
 }
@@ -135,7 +159,7 @@ TAITimestampPacket* gimi_fabricate_tai_timestamps(uint32_t timestamp_count) {
   uint64_t base_timestamp = 0x7777777777777777;
 
   for (uint32_t i = 0; i < timestamp_count; i++) {
-    timestamps[i].tai_seconds = base_timestamp + (i);
+    timestamps[i].tai_seconds = base_timestamp + (i * 0);
     timestamps[i].synchronization_state = 0;
     timestamps[i].timestamp_generation_failure = 1;
     timestamps[i].timestamp_is_modified = 1;
@@ -150,14 +174,14 @@ void gimi_free_tai_timestamps(TAITimestampPacket* timestamps) {
 
 
 // Sample Auxiliary
-int gimi_write_per_sample_timestamps(AVIOContext* pb, TAITimestampPacket* timestamps, uint32_t* offsets, uint64_t timestamp_count) {
+int gimi_write_per_sample_timestamps(AVIOContext* pb, uint32_t* offsets, uint64_t timestamp_count) {
   Box_saiz saiz;
   Box_saio saio;
 
   {
     saiz.aux_info_type = "atai";
     saiz.aux_info_type_parameter = 0x0;
-    saiz.default_sample_info_size = 5; // 4 byte timestamp + 1 byte flags
+    saiz.default_sample_info_size = 9; // 8 byte timestamp + 1 byte flags
     saiz.sample_count = timestamp_count;
     saiz.sample_info_sizes = NULL;
   }
@@ -167,6 +191,31 @@ int gimi_write_per_sample_timestamps(AVIOContext* pb, TAITimestampPacket* timest
     saio.aux_info_type = "atai";
     saio.aux_info_type_parameter = 0x0;
     saio.entry_count = timestamp_count;
+    // saio.offsets = (uint64_t*)malloc(timestamp_count * sizeof(uint64_t));
+    saio.offsets = offsets;
+  }
+  gimi_write_saio_box(pb, &saio);
+
+  return 0;
+}
+
+int gimi_write_per_sample_content_ids(AVIOContext* pb, uint32_t* offsets, uint64_t content_id_count) {
+  Box_saiz saiz;
+  Box_saio saio;
+
+  {
+    saiz.aux_info_type = "suid";
+    saiz.aux_info_type_parameter = 0x0;
+    saiz.default_sample_info_size = CONTENT_ID_SIZE;
+    saiz.sample_count = content_id_count;
+    saiz.sample_info_sizes = NULL;
+  }
+  gimi_write_saiz_box(pb, &saiz);
+
+  {
+    saio.aux_info_type = "suid";
+    saio.aux_info_type_parameter = 0x0;
+    saio.entry_count = content_id_count;
     // saio.offsets = (uint64_t*)malloc(timestamp_count * sizeof(uint64_t));
     saio.offsets = offsets;
   }
@@ -215,7 +264,7 @@ int gimi_write_saio_box(AVIOContext *pb, Box_saio *saio) {
   gimi_write_fullbox(pb, version, flags);
 
   if (flags == 1) {
-      ffio_wfourcc(pb, "stai"); // unsigned int(32) aux_info_type
+      ffio_wfourcc(pb, saio->aux_info_type); // unsigned int(32) aux_info_type
       avio_wb32(pb, 0x0);// unsigned int(32) aux_info_type_parameter
   }
 
@@ -258,20 +307,17 @@ void gimi_write_fullbox(AVIOContext * pb, uint8_t version, uint32_t flags) {
 
 
 // Meta Boxes
-int gimi_write_meta_box_in_moov(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
+int gimi_write_meta_box_top_level(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s) {
   // Variables
-  #define ITEM_COUNT 1
-  #define PROPERTY_COUNT 1
-  #define ASSOCIATION_COUNT 1
+  #define ITEM_COUNT_TOP_LEVEL 1
+  #define PROPERTY_COUNT_TOP_LEVEL 1
+  #define ASSOCIATION_COUNT_TOP_LEVEL 1
   int size = 0;
   int64_t pos = avio_tell(pb);
-  struct infe items[ITEM_COUNT];
-  struct Box properties[PROPERTY_COUNT];
-  struct Association associations[ASSOCIATION_COUNT];
-
-  // 'Randomly' Generated Content ID
-  uint32_t content_id[4] = {0xFFFFFFFF, 0x00000000, 0xFFFFFFFF, 0x00000000};
-  uint8_t* payload = (uint8_t*)malloc(CONTENT_ID_SIZE);
+  struct infe items[ITEM_COUNT_TOP_LEVEL];
+  struct Box properties[PROPERTY_COUNT_TOP_LEVEL];
+  struct Association associations[ASSOCIATION_COUNT_TOP_LEVEL];
+  uint8_t* content_id = gimi_generate_uuid();
 
 
   avio_wb32(pb, 0); /* size */
@@ -293,11 +339,12 @@ int gimi_write_meta_box_in_moov(AVIOContext *pb, MOVMuxContext *mov, AVFormatCon
   }
 
   // Create Properties
-  memcpy(payload, &content_id, CONTENT_ID_SIZE);
+  // memcpy(payload, &content_id, CONTENT_ID_SIZE);
+  // gimi_free_uuid(content_id);
   {
     properties[0].fourcc = "uuid";
     memcpy(properties[0].extended_type, EXTENDED_TYPE_CONTENT_ID, 16);
-    properties[0].payload = payload;
+    properties[0].payload = content_id;
     properties[0].payload_size = CONTENT_ID_SIZE;
   }
 
@@ -310,15 +357,15 @@ int gimi_write_meta_box_in_moov(AVIOContext *pb, MOVMuxContext *mov, AVFormatCon
   }
 
 
-    gimi_write_idat(pb, items, ITEM_COUNT);
+    gimi_write_idat(pb, items, ITEM_COUNT_TOP_LEVEL);
 
-    gimi_write_iinf_box(pb, items, ITEM_COUNT);
+    gimi_write_iinf_box(pb, items, ITEM_COUNT_TOP_LEVEL);
 
-    gimi_write_iprp_box(pb, properties, PROPERTY_COUNT, associations, ASSOCIATION_COUNT);
+    gimi_write_iprp_box(pb, properties, PROPERTY_COUNT_TOP_LEVEL, associations, ASSOCIATION_COUNT_TOP_LEVEL);
 
     // gimi_write_iref_box(pb, mov, s);
 
-    gimi_write_iloc_box(pb, items, ITEM_COUNT);
+    gimi_write_iloc_box(pb, items, ITEM_COUNT_TOP_LEVEL);
 
     size = update_size(pb, pos);
     return size;
@@ -331,13 +378,10 @@ int gimi_write_meta_box_in_track(AVIOContext *pb, MOVMuxContext *mov, AVFormatCo
   int size = 0;
   int64_t pos = avio_tell(pb);
   #define ITEM_COUNT 1
-  #define PROPERTY_COUNT 1
-  #define ASSOCIATION_COUNT 1
-  struct Box properties[PROPERTY_COUNT];
+  #define PROPERTY_COUNT 0
+  #define ASSOCIATION_COUNT 0
   struct infe items[ITEM_COUNT];
-  struct Association associations[ASSOCIATION_COUNT];
-  uint64_t content_id[] = {0xBBBBBBBBBBBBBBBB, 0xCCCCCCCCCCCCCCCC};
-  uint8_t* payload = (uint8_t*)malloc(CONTENT_ID_SIZE);
+  uint64_t content_id[] = {0xCCCCCCCCCCCCCCCC, 0xCCCCCCCCCCCCCCCC};
 
 
   avio_wb32(pb, 0); /* size */
@@ -353,35 +397,16 @@ int gimi_write_meta_box_in_track(AVIOContext *pb, MOVMuxContext *mov, AVFormatCo
     items[0].name = "Content ID for Parent Track";
     items[0].content_type = NULL;
     items[0].uri_type = URI_TYPE_CONTENT_ID;
-    items[0].value = gimi_generate_uuid();
+    // items[0].value = gimi_generate_uuid();
+    items[0].value = content_id;
     items[0].size = UUID_SIZE;
-    // items[0].size = strlen(items[0].value) + 1;
     items[0].construction_method = 1; //Store in the value of the content id in the idat as opposed to mdat
   }
   
-  // Create Properties
-  memcpy(payload, &content_id, CONTENT_ID_SIZE);
-  {
-    properties[0].fourcc = "uuid";
-    memcpy(properties[0].extended_type, EXTENDED_TYPE_CONTENT_ID, 16);
-    properties[0].payload = payload;
-    properties[0].payload_size = CONTENT_ID_SIZE;
-  }
-
-  // Create Item<->Property Associations
-  {
-    associations[0].item_id = 1;
-    associations[0].property_count = 1;
-    associations[0].property_ids = (uint16_t*)malloc(sizeof(uint16_t));
-    associations[0].property_ids[0] = 1;
-  }
 
   gimi_write_idat(pb, items, ITEM_COUNT);
 
   gimi_write_iinf_box(pb, items, ITEM_COUNT);
-
-  gimi_write_iprp_box(pb, properties, PROPERTY_COUNT, associations, ASSOCIATION_COUNT);
-
 
   gimi_write_iloc_box(pb, items, ITEM_COUNT);
 

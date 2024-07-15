@@ -105,6 +105,7 @@ typedef struct Box_saio {
 int gimi_write_brands(AVIOContext* pb);
 
 // Content ID
+int gimi_write_track_content_ids_in_mdat(AVIOContext* pb, MOVMuxContext* mov, int64_t nb_frames);
 uint8_t* gimi_generate_uuid(void); // 16 bytes (128 bits)
 void gimi_free_uuid(uint8_t *uuid);
 
@@ -116,7 +117,8 @@ TAITimestampPacket* gimi_fabricate_tai_timestamps(uint32_t timestamp_count);
 void gimi_free_tai_timestamps(TAITimestampPacket* timestamps);
 
 // Sample Auxiliary
-int gimi_write_per_sample_timestamps(AVIOContext* pb, TAITimestampPacket* timestamps, uint32_t* offsets, uint64_t timestamp_count);
+int gimi_write_per_sample_timestamps(AVIOContext* pb, uint32_t* offsets, uint64_t timestamp_count);
+int gimi_write_per_sample_content_ids(AVIOContext* pb, uint32_t* offsets, uint64_t content_id_count);
 int gimi_write_saiz_box(AVIOContext* pb, Box_saiz* saiz);
 int gimi_write_saio_box(AVIOContext* pb, Box_saio* saio);
 
@@ -125,7 +127,7 @@ int gimi_write_saio_box(AVIOContext* pb, Box_saio* saio);
 void gimi_write_fullbox(AVIOContext* pb, uint8_t version, uint32_t flags);
 
 // Meta Boxes
-int gimi_write_meta_box_in_moov(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s);
+int gimi_write_meta_box_top_level(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s);
 int gimi_write_meta_box_in_track(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s);
 int gimi_write_hdlr_box(AVIOContext *pb, MOVMuxContext *mov, AVFormatContext *s);
 int gimi_write_idat(AVIOContext *pb, infe* items, uint32_t item_count);

@@ -2435,8 +2435,6 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
     int64_t pos = avio_tell(pb);
     char compressor_name[32] = { 0 };
     int avid = 0;
-    uint64_t nb_frames = (uint64_t) s->streams[0]->nb_frames;
-    TAITimestampPacket* timestamps = NULL;
 
     int uncompressed_ycbcr = ((track->par->codec_id == AV_CODEC_ID_RAWVIDEO && track->par->format == AV_PIX_FMT_UYVY422)
                            || (track->par->codec_id == AV_CODEC_ID_RAWVIDEO && track->par->format == AV_PIX_FMT_YUYV422)
@@ -2641,13 +2639,6 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
 
     gimi_write_taic_tag(pb, track);
 
-    // Write Timestamps
-    timestamps = gimi_fabricate_tai_timestamps(nb_frames);
-    gimi_write_per_sample_timestamps(pb, timestamps, mov->timestamp_offsets, nb_frames);
-    gimi_free_tai_timestamps(timestamps);
-
-    // Write Content Ids
-    // TODO
     return update_size(pb, pos);
 }
 
@@ -2978,6 +2969,7 @@ static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
 {
     int64_t pos = avio_tell(pb);
     int ret = 0;
+    uint64_t nb_frames = (uint64_t) s->streams[0]->nb_frames;
 
     avio_wb32(pb, 0); /* size */
     ffio_wfourcc(pb, "stbl");
@@ -3009,6 +3001,13 @@ static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
     if (track->par->codec_id == AV_CODEC_ID_OPUS || track->par->codec_id == AV_CODEC_ID_AAC) {
         mov_preroll_write_stbl_atoms(pb, track);
     }
+
+    // Write Timestamps
+    gimi_write_per_sample_timestamps(pb, mov->timestamp_offsets, nb_frames);
+
+    // Write Content Ids
+    gimi_write_per_sample_content_ids(pb, mov->content_id_offsets, nb_frames);
+
     return update_size(pb, pos);
 }
 
@@ -8104,7 +8103,7 @@ static int mov_write_trailer(AVFormatContext *s)
 
     gimi_write_timestamps_in_mdat(pb, mov, nb_frames);
 
-    // gimi_write_track_samples_content_ids_in_mdat();
+    gimi_write_track_content_ids_in_mdat(pb, mov, nb_frames);
 
     if (mov->need_rewrite_extradata) {
         for (i = 0; i < mov->nb_streams; i++) {
@@ -8190,7 +8189,7 @@ static int mov_write_trailer(AVFormatContext *s)
         }
         avio_seek(pb, mov->reserved_moov_size > 0 ? mov->reserved_header_pos : moov_pos, SEEK_SET);
 
-        gimi_write_meta_box_in_moov(pb, mov, s);
+        gimi_write_meta_box_top_level(pb, mov, s);
 
         if (mov->flags & FF_MOV_FLAG_FASTSTART) {
             av_log(s, AV_LOG_INFO, "Starting second pass: moving the moov atom to the beginning of the file\n");
