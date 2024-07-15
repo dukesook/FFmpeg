@@ -2637,7 +2637,7 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
             mov_write_aux_tag(pb, "auxi");
     }
 
-    gimi_write_taic_tag(pb, track);
+    gimi_write_taic_box(pb, track);
 
     return update_size(pb, pos);
 }
@@ -3003,10 +3003,10 @@ static int mov_write_stbl_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext
     }
 
     // Write Timestamps
-    gimi_write_per_sample_timestamps(pb, mov->timestamp_offsets, nb_frames);
+    gimi_write_frame_timestamp_metadata(pb, mov->timestamp_offsets, nb_frames);
 
     // Write Content Ids
-    gimi_write_per_sample_content_ids(pb, mov->content_id_offsets, nb_frames);
+    gimi_write_frame_content_id_metadata(pb, mov->content_id_offsets, nb_frames);
 
     return update_size(pb, pos);
 }
@@ -8101,9 +8101,9 @@ static int mov_write_trailer(AVFormatContext *s)
     int64_t moov_pos;
     int64_t nb_frames = s->streams[0]->nb_frames;
 
-    gimi_write_timestamps_in_mdat(pb, mov, nb_frames);
+    gimi_write_frame_timestamp_values(pb, mov, nb_frames);
 
-    gimi_write_track_content_ids_in_mdat(pb, mov, nb_frames);
+    gimi_write_frame_content_id_values(pb, mov, nb_frames);
 
     if (mov->need_rewrite_extradata) {
         for (i = 0; i < mov->nb_streams; i++) {
