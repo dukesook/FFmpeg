@@ -106,8 +106,11 @@ int gimi_write_brands(AVIOContext* pb);
 // Content ID
 int gimi_write_frame_content_id_values(AVIOContext* pb, MOVMuxContext* mov, int64_t nb_frames);
 int gimi_write_frame_content_id_metadata(AVIOContext* pb, uint32_t* offsets, uint64_t content_id_count);
-uint8_t* gimi_generate_uuid(void); // 16 bytes (128 bits)
+void gimi_generate_uuid(uint8_t* uuid);
+void gimi_generate_uuids_stack(uint8_t* uuids, uint32_t count);
+uint8_t* gimi_generate_uuids_malloc(uint32_t count);
 void gimi_free_uuid(uint8_t* uuid);
+void gimi_free_uuids(uint8_t** uuids, uint32_t count);
 
 // TAI Timestamps
 int gimi_write_frame_timestamp_values(AVIOContext* pb, MOVMuxContext* mov, int64_t nb_frames);
@@ -116,6 +119,7 @@ int gimi_write_tai_timestamp_packet(AVIOContext* pb, TAITimestampPacket* timesta
 int gimi_write_taic_box(AVIOContext* pb, MOVTrack* track);
 TAITimestampPacket* gimi_fabricate_tai_timestamps(uint32_t timestamp_count);
 void gimi_free_tai_timestamps(TAITimestampPacket* timestamps);
+const char* gimi_tai_to_date(uint64_t tai_seconds);
 
 // Boxes
 int64_t gimi_update_size(AVIOContext *pb, int64_t pos);
@@ -136,9 +140,12 @@ int gimi_write_ipma_box(AVIOContext* pb, Association* associations, size_t assoc
 int gimi_write_saiz_box(AVIOContext* pb, Box_saiz* saiz);
 int gimi_write_saio_box(AVIOContext* pb, Box_saio* saio);
 
+// Conversions
+const char* gimi_uint64_to_string(uint64_t value);
+
 // Debug
-void gimi_write_to_file(void);
-void gimi_log(const char* message);
-void gimi_clear_log(void);
+void gimi_log_timestamps(TAITimestampPacket* timestamps, uint32_t* offsets, uint64_t timestamp_count);
+void gimi_log_content_ids(uint8_t* content_ids, uint32_t* offsets, uint64_t count);
+void gimi_log_ism(void);
 
 #endif /* GIMI_H */

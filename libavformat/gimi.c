@@ -6,9 +6,12 @@
 const uint8_t EXTENDED_TYPE_CONTENT_ID[16] = {0x4a, 0x66, 0xef, 0xa7, 0xe5, 0x41, 0x52, 0x6c, 0x94, 0x27, 0x9e, 0x77, 0x61, 0x7f, 0xeb, 0x7d};
 const size_t CONTENT_ID_SIZE = 16;
 const size_t TAITimestampPacketSize = 9; // 8 byte timestamp + 1 byte flags
+#define VERSION 3
 #define UUID_SIZE (16)
 #define URI_TYPE_CONTENT_ID "urn:uuid:25d7f5a6-7a80-5c0f-b9fb-30f64edf2712";
-#define DEBUG_FILENAME "out/output.txt"
+#define TIMESTAMPS_LOG "out/timestamps_03.csv"
+#define CONTENT_IDS_LOG "out/content_ids_03.csv"
+#define ISM_LOG "out/ism_03.xml"
 
 // Branding
 int gimi_write_brands(AVIOContext* pb) {
@@ -26,20 +29,24 @@ int gimi_write_frame_content_id_values(AVIOContext* pb, MOVMuxContext* mov, int6
   // Variables
   uint64_t pos;
   size_t size; // size of all content ids
-  uint8_t* content_id;
+  uint8_t* content_ids = gimi_generate_uuids_malloc(nb_frames);
 
   // Allocate Content ID Offsets
   mov->content_id_offsets = (uint32_t*)malloc(nb_frames * sizeof(uint32_t));
 
   // Write Content IDs
   for (int i = 0; i < nb_frames; i++) {
+    size_t index = i * CONTENT_ID_SIZE;
+    uint8_t* content_id = &content_ids[index];
     pos = avio_tell(pb);
     mov->content_id_offsets[i] = pos; // Save Content ID Position (for saio box)
-    content_id = gimi_generate_uuid();
     avio_write(pb, content_id, CONTENT_ID_SIZE);
     mov->mdat_size += CONTENT_ID_SIZE;
-    gimi_free_uuid(content_id);
   }
+
+  // Log Content IDs - Optional
+  gimi_log_content_ids(content_ids, mov->content_id_offsets, nb_frames);
+  free(content_ids);
 
   size = nb_frames * CONTENT_ID_SIZE;
   return size;
@@ -76,40 +83,85 @@ int gimi_write_frame_content_id_metadata(AVIOContext* pb, uint32_t* offsets, uin
   return 0;
 }
 
-uint8_t* gimi_generate_uuid() {
-  // Variables
-  uint8_t* uuid = (uint8_t*)malloc(16 * sizeof(uint8_t));
-  if (uuid == NULL) {
-    fprintf(stderr, "Memory allocation failed\n");
-    exit(1);
+void gimi_generate_uuid(uint8_t* uuid) {
+  gimi_generate_uuids_stack(uuid, 1);
+}
+
+void gimi_generate_uuids_stack(uint8_t* uuids, uint32_t count) {
+  if (uuids == NULL) {
+      fprintf(stderr, "Provided memory for UUIDs is NULL\n");
+      exit(1);
   }
 
   // Seed the random number generator
   srand((unsigned)time(NULL));
 
-  // Generate 16 random bytes
-  for (int i = 0; i < 16; i++) {
-    uuid[i] = rand() % 256;
-    // uuid[i] = 0xFF;
+  // Generate 'count' number of UUIDs
+  for (uint32_t j = 0; j < count; j++) {
+      uint8_t* uuid = &uuids[j * 16];
+
+      // Generate 16 random bytes for the UUID
+      for (int i = 0; i < 16; i++) {
+          uuid[i] = rand() % 256;
+      }
+
+      // Set the version to 4 -> 0100xxxx
+      uuid[6] = (uuid[6] & 0x0F) | 0x40;
+
+      // Set the variant to RFC 4122 -> 10xxxxxx
+      uuid[8] = (uuid[8] & 0x3F) | 0x80;
+
+      // Temporarily Hard-Code for debugging (remove this in production)
+      // for (int i = 0; i < 16; i++) {
+      //     uuid[i] = 0xCC;
+      // }
   }
+}
 
-  // Set the version to 4 -> 0100xxxx
-  uuid[6] = (uuid[6] & 0x0F) | 0x40;
+uint8_t* gimi_generate_uuids_malloc(uint32_t count) {
+    // Allocate a single block of memory to hold all UUIDs
+    uint8_t* uuids = (uint8_t*)malloc(count * 16 * sizeof(uint8_t));
+    if (uuids == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+        exit(1);
+    }
 
-  // Set the variant to RFC 4122 -> 10xxxxxx
-  uuid[8] = (uuid[8] & 0x3F) | 0x80;
+    // Seed the random number generator
+    srand((unsigned)time(NULL));
 
-  // Temporarily Hard-Code for debugging
-  for (int i = 0; i < 16; i++) {
-    uuid[i] = 0xCC;
-  }
-  // Temporarily Hard-Code for debugging
+    // Generate 'count' number of UUIDs
+    for (uint32_t j = 0; j < count; j++) {
+        uint8_t* uuid = &uuids[j * 16];
 
-  return uuid;
+        // Generate 16 random bytes for the UUID
+        for (int i = 0; i < 16; i++) {
+            uuid[i] = rand() % 256;
+        }
+
+        // Set the version to 4 -> 0100xxxx
+        uuid[6] = (uuid[6] & 0x0F) | 0x40;
+
+        // Set the variant to RFC 4122 -> 10xxxxxx
+        uuid[8] = (uuid[8] & 0x3F) | 0x80;
+
+        // Temporarily Hard-Code for debugging (remove this in production)
+        // for (int i = 0; i < 16; i++) {
+        //     uuid[i] = 0xCC;
+        // }
+    }
+
+    return uuids;
 }
 
 void gimi_free_uuid(uint8_t* uuid) {
   free(uuid);
+}
+
+void gimi_free_uuids(uint8_t** uuids, uint32_t count) {
+    for (uint32_t i = 0; i < count; i++) {
+        free(uuids[i]);
+    }
+    free(uuids);
 }
 
 // TAI Timestamps
@@ -134,6 +186,11 @@ int gimi_write_frame_timestamp_values(AVIOContext* pb, MOVMuxContext* mov, int64
     timestamp_packet_size = gimi_write_tai_timestamp_packet(pb, &timestamps[i]);
     mov->mdat_size += timestamp_packet_size;
   }
+
+  // Log Timestamps - Optional
+  gimi_log_timestamps(timestamps, mov->timestamp_offsets, nb_frames);
+
+  // Free Memory
   gimi_free_tai_timestamps(timestamps);
 
   return 0;
@@ -166,8 +223,6 @@ int gimi_write_frame_timestamp_metadata(AVIOContext* pb, uint32_t* offsets, uint
     saio.offsets = offsets;
   }
   gimi_write_saio_box(pb, &saio);
-
-  gimi_write_to_file();
 
   return 0;
 }
@@ -223,10 +278,10 @@ int gimi_write_taic_box(AVIOContext* pb, MOVTrack* track) {
 TAITimestampPacket* gimi_fabricate_tai_timestamps(uint32_t timestamp_count) {
   // Variables
   TAITimestampPacket* timestamps = (TAITimestampPacket*)malloc(timestamp_count * sizeof(TAITimestampPacket));
-  uint64_t base_timestamp = 0x7777777777777777;
+  uint64_t base_timestamp = 0x7000000000000000;
 
   for (uint32_t i = 0; i < timestamp_count; i++) {
-    timestamps[i].tai_seconds = base_timestamp + (i * 0);
+    timestamps[i].tai_seconds = base_timestamp + (i * 0x10000000);
     timestamps[i].synchronization_state = 0;
     timestamps[i].timestamp_generation_failure = 1;
     timestamps[i].timestamp_is_modified = 1;
@@ -237,6 +292,14 @@ TAITimestampPacket* gimi_fabricate_tai_timestamps(uint32_t timestamp_count) {
 
 void gimi_free_tai_timestamps(TAITimestampPacket* timestamps) {
   free(timestamps);
+}
+
+const char* gimi_tai_to_date(uint64_t tai_seconds) {
+  // TAI epoch is January 1st, 1958
+  
+  const char* date = "TODO";
+
+  return date;
 }
 
 // Boxes
@@ -287,7 +350,8 @@ int gimi_write_meta_box_top_level(AVIOContext* pb, MOVMuxContext* mov, AVFormatC
   struct infe items[ITEM_COUNT_TOP_LEVEL];
   struct Box properties[PROPERTY_COUNT_TOP_LEVEL];
   struct Association associations[ASSOCIATION_COUNT_TOP_LEVEL];
-  uint8_t* content_id = gimi_generate_uuid();
+  uint8_t content_id[16];
+  gimi_generate_uuid(content_id);
 
   avio_wb32(pb, 0); /* size */
   ffio_wfourcc(pb, "meta");
@@ -335,6 +399,9 @@ int gimi_write_meta_box_top_level(AVIOContext* pb, MOVMuxContext* mov, AVFormatC
 
   gimi_write_iloc_box(pb, items, ITEM_COUNT_TOP_LEVEL);
 
+  // Log ISM XML - Optional
+  gimi_log_ism();
+
   size = gimi_update_size(pb, pos);
   return size;
 }
@@ -345,9 +412,9 @@ int gimi_write_meta_box_in_track(AVIOContext* pb, MOVMuxContext* mov, AVFormatCo
   // Variables
   int size = 0;
   int64_t pos = avio_tell(pb);
-#define ITEM_COUNT 1
-#define PROPERTY_COUNT 0
-#define ASSOCIATION_COUNT 0
+  #define ITEM_COUNT 1
+  #define PROPERTY_COUNT 0
+  #define ASSOCIATION_COUNT 0
   struct infe items[ITEM_COUNT];
   uint64_t content_id[] = {0xCCCCCCCCCCCCCCCC, 0xCCCCCCCCCCCCCCCC};
 
@@ -364,7 +431,6 @@ int gimi_write_meta_box_in_track(AVIOContext* pb, MOVMuxContext* mov, AVFormatCo
     items[0].name = "Content ID for Parent Track";
     items[0].content_type = NULL;
     items[0].uri_type = URI_TYPE_CONTENT_ID;
-    // items[0].value = gimi_generate_uuid();
     items[0].value = content_id;
     items[0].size = UUID_SIZE;
     items[0].construction_method = 1; // Store in the value of the content id in the idat as opposed to mdat
@@ -637,40 +703,91 @@ int gimi_write_saio_box(AVIOContext* pb, Box_saio* saio) {
   return gimi_update_size(pb, pos);
 }
 
+// Conversions
+const char* gimi_uint64_to_string(uint64_t value) {
+    static char buffer[21]; // Buffer to hold the maximum length of uint64_t as a string
+    snprintf(buffer, sizeof(buffer), "%lu", value);
+    return buffer;
+}
+
 // Debug
-void gimi_write_to_file() {
+void gimi_log_timestamps(TAITimestampPacket* timestamps, uint32_t* timestamp_offsets, uint64_t timestamp_count) {
 
-  const char* text = "Hello, World!";
-  FILE* file = fopen("out/output.txt", "w");
+  FILE* file = fopen(TIMESTAMPS_LOG, "w");
   if (file == NULL) {
     perror("Error opening file");
     exit(1);
   }
 
-  fprintf(file, "%s\n", text);
+  // Column Headers
+  fprintf(file, "Frame, Timestamp, Date, Position, synchronication_state, generation_failure, is_modified\n");
+
+  for (uint32_t i = 1; i <= timestamp_count; i++) {
+    TAITimestampPacket timestamp = timestamps[i];
+    uint64_t tai_seconds = timestamp.tai_seconds;
+    uint32_t position = timestamp_offsets[i];
+    const char* date = gimi_tai_to_date(tai_seconds);
+
+    // Write Frame Number
+    fprintf(file, "%d,", i);
+
+    // Write Timestamp
+    fprintf(file, "0x%lx = %lu,", tai_seconds, tai_seconds);
+    fprintf(file, "%s,", date);
+
+    // Write Position
+    fprintf(file, "0x%x = %u,", position, position);
+
+    // Write Status Bits
+    fprintf(file, "%d, %d, %d,", timestamp.synchronization_state, timestamp.timestamp_generation_failure, timestamp.timestamp_is_modified);
+    fprintf(file, "\n");
+  }
 
   fclose(file);
-
-  gimi_log("1");
-  gimi_log("2");
-  gimi_log("3\n");
-  gimi_log("4");
 }
 
-void gimi_log(const char* message) {
-  FILE* file = fopen(DEBUG_FILENAME, "a");
+void gimi_log_content_ids(uint8_t* content_ids, uint32_t* offsets, uint64_t count) {
+  FILE* file = fopen(CONTENT_IDS_LOG, "w");
   if (file == NULL) {
-    perror("Error opening file");
-    exit(1);
+      perror("Error opening file");
+      exit(1);
   }
-  fprintf(file, "%s", message);
+
+  // Column Headers
+  fprintf(file, "Frame, Content ID (16-Bytes), Position\n");
+
+  for (uint32_t i = 0; i < count; i++) {
+      uint32_t position = offsets[i];
+      uint8_t* content_id = &content_ids[i * 16];
+
+      // Convert content_id to a hex string
+      char content_id_str[33]; // 32 hex characters + null terminator
+      for (int j = 0; j < 16; j++) {
+          sprintf(&content_id_str[j * 2], "%02X", content_id[j]);
+      }
+      content_id_str[32] = '\0';
+
+      // Write Frame Number
+      fprintf(file, "%u,", i + 1);
+
+      // Write Content ID
+      fprintf(file, "0x%s,", content_id_str);
+
+      // Write Position
+      fprintf(file, "0x%x = %u\n", position, position);
+  }
+
   fclose(file);
 }
 
-void gimi_clear_log() {
-  int error = remove(DEBUG_FILENAME);
-  if (error) {
-    perror("Error deleting file");
-    exit(1);
+void gimi_log_ism() {
+  FILE* file = fopen(ISM_LOG, "w");
+  if (file == NULL) {
+      perror("Error opening file");
+      exit(1);
   }
+
+  fprintf(file, "%s", ism_xml);
+
+  fclose(file);
 }
