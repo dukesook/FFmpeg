@@ -9,6 +9,7 @@ const size_t TAITimestampPacketSize = 9; // 8 byte timestamp + 1 byte flags
 #define VERSION 3
 #define UUID_SIZE (16)
 #define URI_TYPE_CONTENT_ID "urn:uuid:25d7f5a6-7a80-5c0f-b9fb-30f64edf2712";
+#define URI_TYPE_TRACK_COMPONENT_UUID_LIST "urn:uuid:4a245bb3-dd19-5f67-906f-89beac1732c3";
 #define TIMESTAMPS_LOG "out/timestamps_03.csv"
 #define CONTENT_IDS_LOG "out/content_ids_03.csv"
 #define ISM_LOG "out/ism_03.xml"
@@ -412,7 +413,7 @@ int gimi_write_meta_box_in_track(AVIOContext* pb, MOVMuxContext* mov, AVFormatCo
   // Variables
   int size = 0;
   int64_t pos = avio_tell(pb);
-  #define ITEM_COUNT 1
+  #define ITEM_COUNT 2
   #define PROPERTY_COUNT 0
   #define ASSOCIATION_COUNT 0
   struct infe items[ITEM_COUNT];
@@ -434,6 +435,22 @@ int gimi_write_meta_box_in_track(AVIOContext* pb, MOVMuxContext* mov, AVFormatCo
     items[0].value = content_id;
     items[0].size = UUID_SIZE;
     items[0].construction_method = 1; // Store in the value of the content id in the idat as opposed to mdat
+  }
+   
+  uint8_t track_component_uuid_list_data[] = {0xAA, 0xAA, 0xAA, 0xAA};
+  size_t track_component_uuid_list_size = 4;
+
+  {
+    size_t track_component_uuid_list_size = 0;
+    void* track_component_uuid_list = gimi_hardcode_track_component_uuid_list(&size);
+    items[1].id = 2;
+    items[1].item_type = "uri ";
+    items[1].name = "Track Component UUID List";
+    items[1].content_type = NULL;
+    items[1].uri_type = URI_TYPE_TRACK_COMPONENT_UUID_LIST;
+    items[1].value = track_component_uuid_list_data;
+    items[1].size = track_component_uuid_list_size;
+    items[1].construction_method = 1; // Store in the value of the content id in the idat as opposed to mdat
   }
 
   gimi_write_idat_box(pb, items, ITEM_COUNT);

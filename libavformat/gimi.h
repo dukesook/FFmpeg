@@ -100,6 +100,12 @@ typedef struct Box_saio {
   uint32_t* offsets;
 } Box_saio;
 
+typedef struct TrackComponentUUIDList {
+  uint32_t number_of_sample_entries;
+  uint32_t* sample_description_index;
+  uint32_t* number_of_components;
+} TrackComponentUUIDList;
+
 // Branding
 int gimi_write_brands(AVIOContext* pb);
 
@@ -111,6 +117,8 @@ void gimi_generate_uuids_stack(uint8_t* uuids, uint32_t count);
 uint8_t* gimi_generate_uuids_malloc(uint32_t count);
 void gimi_free_uuid(uint8_t* uuid);
 void gimi_free_uuids(uint8_t** uuids, uint32_t count);
+TrackComponentUUIDList gimi_generate_track_component_uuid_list(uint32_t number_of_sample_entries, uint32_t number_of_components);
+void* gimi_hardcode_track_component_uuid_list(size_t* size); // returns a malloc'd pointer
 
 // TAI Timestamps
 int gimi_write_frame_timestamp_values(AVIOContext* pb, MOVMuxContext* mov, int64_t nb_frames);
