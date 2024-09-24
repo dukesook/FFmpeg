@@ -29,6 +29,7 @@
 const AVCodecTag ff_codec_movvideo_tags[] = {
 /*  { AV_CODEC_ID_, MKTAG('I', 'V', '5', '0') }, *//* Indeo 5.0 */
 
+    { AV_CODEC_ID_RAWVIDEO, MKTAG('u', 'n', 'c', 'v') },
     { AV_CODEC_ID_RAWVIDEO, MKTAG('r', 'a', 'w', ' ') }, /* uncompressed RGB */
     { AV_CODEC_ID_RAWVIDEO, MKTAG('y', 'u', 'v', '2') }, /* uncompressed YUV422 */
     { AV_CODEC_ID_RAWVIDEO, MKTAG('2', 'v', 'u', 'y') }, /* uncompressed 8-bit 4:2:2 */

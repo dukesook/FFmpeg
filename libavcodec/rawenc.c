@@ -77,6 +77,24 @@ static int raw_encode(AVCodecContext *avctx, AVPacket *pkt,
             AV_WB64(&pkt->data[8 * x], v << 48 | v >> 16);
         }
     }
+    else if (avctx->codec_tag == AV_RL32("uncv") && ret > 0 &&
+            frame->format == AV_PIX_FMT_RGB24) {
+        int x, y;
+        uint8_t *dst = pkt->data;
+        uint8_t *src = frame->data[0];
+
+        for (y = 0; y < frame->height; y++) {
+            for (x = 0; x < frame->width; x++) {
+                dst[0] = src[0];  // Red component
+                dst[1] = src[1];  // Green component
+                dst[2] = src[2];  // Blue component
+                src += 3;
+                dst += 3;
+            }
+            src += frame->linesize[0] - frame->width * 3;
+        }
+    }
+
     *got_packet = 1;
     return 0;
 }

@@ -325,6 +325,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
             if (   par->codec_tag
                 && par->codec_id == AV_CODEC_ID_RAWVIDEO
                 && (   av_codec_get_tag(of->p.codec_tag, par->codec_id) == 0
+                    || av_codec_get_tag(of->p.codec_tag, par->codec_id) == MKTAG('u', 'n', 'c', 'v')
                     || av_codec_get_tag(of->p.codec_tag, par->codec_id) == MKTAG('r', 'a', 'w', ' '))
                 && !validate_codec_tag(s, st)) {
                 // the current rawvideo encoding system ends up setting
