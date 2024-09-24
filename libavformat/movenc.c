@@ -2602,6 +2602,90 @@ static int mov_write_aux_tag(AVIOContext *pb, const char *aux_type)
     return update_size(pb, pos);
 }
 
+static int mov_write_uncC_component(AVIOContext *pb, uint16_t index, uint8_t bit_depth, uint8_t format, uint8_t align_size) {
+    avio_wb16(pb, index);
+    avio_w8(pb, bit_depth-1);
+    avio_w8(pb, format); // 0 = unsigned integer. 1 = floating point. 2 = complex
+    avio_w8(pb, align_size);
+    return 0;
+}
+
+static int mov_write_uncC_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track) {
+    int64_t pos = avio_tell(pb);
+    uint8_t version = 0x0;
+    const AVPixFmtDescriptor *pixdesc = av_pix_fmt_desc_get(s->streams[0]->codecpar->format);
+    const uint32_t nb_components = (uint32_t) pixdesc->nb_components;
+    uint8_t bit_depth = 8; // TODO: Read correct bit depth
+                           // track->par->bits_per_coded_sample;
+                           // track->par->bits_per_raw_sample;
+
+    avio_wb32(pb, 0); /* size */
+    ffio_wfourcc(pb, "uncC");
+
+    avio_w8(pb, 0x00);       // Flags
+    avio_wb24(pb, 0x000000); // Version
+
+    avio_wb32(pb, 0x00000000); // profile
+
+    if (version == 1) {
+
+    }
+    else if (version == 0) {
+        avio_wb32(pb, nb_components);
+        for (uint32_t i = 0; i < nb_components; i++) {
+            mov_write_uncC_component(pb, i, bit_depth, 0x00, 0x00);
+        }
+
+        avio_w8(pb, 0x00); //sampling_type. 0 = No subsampling
+        avio_w8(pb, 0x01); //interleave_type. 0 = Planar, 1 = interleaved
+        avio_w8(pb, 0x00); //block_size;
+
+        // Pixel Layout Flags
+        // bit(1) components_little_endian;
+        // bit(1) block_pad_last;
+        // bit(1) block_little_endian;
+        // bit(1) block_reversed;
+        // bit(1) pad_unknown;
+        // bit(3) reserved = 0;
+        avio_w8(pb, 0X00);
+
+        avio_wb32(pb, 0x00000000); // pixel_size;
+        avio_wb32(pb, 0x00000000); // row_align_size;
+        avio_wb32(pb, 0x00000000); // tile_align_size;
+        avio_wb32(pb, 0x00000000); // num_tile_cols_minus_one;
+        avio_wb32(pb, 0x00000000); // num_tile_rows_minus_one;
+    }
+    return update_size(pb, pos);
+}
+
+static int mov_write_cmpd_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track) {
+    
+    const AVPixFmtDescriptor *pixdesc = av_pix_fmt_desc_get(s->streams[0]->codecpar->format);
+    const uint32_t nb_components = (uint32_t) pixdesc->nb_components;
+    int pix_fmt = track->par->format;
+    int64_t start_position = avio_tell(pb);
+
+    avio_wb32(pb, 0); // size
+    ffio_wfourcc(pb, "cmpd");
+    avio_wb32(pb, nb_components);
+
+    if (pix_fmt == AV_PIX_FMT_RGB24) {
+        if (nb_components != 3) {
+            av_log(s, AV_LOG_ERROR, "RGB24 format must have 3 components\n");
+            return 0;
+        }
+        avio_wb16(pb, 0x4); // Red
+        avio_wb16(pb, 0x5); // Green
+        avio_wb16(pb, 0x6); // Blue
+    }
+    else {
+        av_log(s, AV_LOG_ERROR, "Pixel format not implemented yet\n");
+        return 0;
+    }
+
+    return update_size(pb, start_position);
+}
+
 static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, MOVTrack *track)
 {
     int ret = AVERROR_BUG;
@@ -2727,6 +2811,9 @@ static int mov_write_video_tag(AVFormatContext *s, AVIOContext *pb, MOVMuxContex
     } else if (track->par->codec_id == AV_CODEC_ID_R10K) {
         if (track->par->codec_tag == MKTAG('R','1','0','k'))
             mov_write_dpxe_tag(pb, track);
+    } else if (track->par->codec_id == AV_CODEC_ID_RAWVIDEO) {
+        mov_write_uncC_tag(s, pb, mov, track);
+        mov_write_cmpd_tag(s, pb, mov, track);
     } else if (track->vos_len > 0)
         mov_write_glbl_tag(pb, track);
 
@@ -8580,6 +8667,7 @@ static const AVCodecTag codec_mp4_tags[] = {
     { AV_CODEC_ID_MOV_TEXT,        MKTAG('t', 'x', '3', 'g') },
     { AV_CODEC_ID_BIN_DATA,        MKTAG('g', 'p', 'm', 'd') },
     { AV_CODEC_ID_MPEGH_3D_AUDIO,  MKTAG('m', 'h', 'm', '1') },
+    { AV_CODEC_ID_RAWVIDEO,        MKTAG('u', 'n', 'c', 'v') },
     { AV_CODEC_ID_TTML,            MOV_MP4_TTML_TAG          },
     { AV_CODEC_ID_TTML,            MOV_ISMV_TTML_TAG         },
 
