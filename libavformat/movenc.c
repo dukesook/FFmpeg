@@ -2276,7 +2276,7 @@ static void write_uncC(AVFormatContext *s, AVIOContext *pb, MOVMuxContext *mov, 
 	// bit(3) reserved = 0;
     avio_w8(pb, 0X00);
 
-    avio_w32(pb, 0X00);         // unsigned int(32) pixel_size;
+    avio_wb32(pb, 0X00);         // unsigned int(32) pixel_size;
 	avio_wb32(pb, 0x00000000); // unsigned int(32) row_align_size;
 	avio_wb32(pb, 0x00000000); // unsigned int(32) tile_align_size;
 	avio_wb32(pb, 0x00000000); // unsigned int(32) num_tile_cols_minus_one;
